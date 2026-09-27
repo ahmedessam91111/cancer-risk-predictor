@@ -1,0 +1,13 @@
+# The training dataset is checksum-gated by verify_dataset.py, which records
+# sha256 01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5
+#
+# `-text` disables git's automatic end-of-line conversion for this file. Without
+# it, core.autocrlf=true on Windows rewrites LF -> CRLF on checkout, changing
+# the file from 141851 to 143852 bytes and breaking that recorded hash on every
+# machine except the one that trained the model. This was observed and
+# reproduced before these lines were added.
+cancer-risk-factors.csv -text
+
+# Model artifacts are binary pickles. Never let git touch them.
+*.pkl binary
+*.joblib binary
