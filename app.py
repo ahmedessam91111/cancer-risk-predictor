@@ -10,19 +10,27 @@ st.set_page_config(page_title="Cancer Risk Predictor", page_icon="🧬",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # ---------------- مسارات الملفات (نسبية عشان تشتغل في أي مكان) ----------------
+# Issue #8: the app now reads the single bundle written by `python train.py`
+# instead of three loose .pkl files that could drift out of sync with each other.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "model_xgb_new.pkl")
-LE_PATH = os.path.join(BASE_DIR, "label_encoder.pkl")
-FEATURES_PATH = os.path.join(BASE_DIR, "feature_names.pkl")
+BUNDLE_PATH = os.path.join(BASE_DIR, "artifacts", "model_bundle.joblib")
 
 @st.cache_resource
 def load_artifacts():
-    model = joblib.load(MODEL_PATH)
-    le = joblib.load(LE_PATH)
-    feature_names = joblib.load(FEATURES_PATH)
-    return model, le, feature_names
+    if not os.path.exists(BUNDLE_PATH):
+        st.error(
+            f"Model bundle not found at `{BUNDLE_PATH}`.\n\n"
+            "Train it first:\n\n```\npython train.py\n```"
+        )
+        st.stop()
+    return joblib.load(BUNDLE_PATH)
 
-model, le, FEATURE_NAMES = load_artifacts()
+BUNDLE = load_artifacts()
+model     = BUNDLE["model"]
+scaler    = BUNDLE["scaler"]          # Issue #2: the fitted scaler now ships with the model
+le        = BUNDLE["label_encoder"]
+FEATURE_NAMES = BUNDLE["feature_names"]
+META      = BUNDLE["metadata"]
 
 RISK_COLORS = {"Low": "#27ae60", "Medium": "#f39c12", "High": "#e74c3c"}
 
@@ -103,14 +111,29 @@ st.markdown("""
 
 # ---------------- أدوات مساعدة ----------------
 def preprocess_input(df):
+    """
+    Coerce a raw input frame into the exact matrix the model was trained on.
+
+    Two things matter here and both were broken before Issue #8:
+
+    1. Column set AND order must equal `FEATURE_NAMES`. The model's thresholds
+       are positional, so a reordered CSV silently produces wrong predictions.
+    2. The values must be standardized with the scaler that was fitted during
+       training. Trees are not scale-invariant: a threshold of 0.5 means
+       something different in raw units than in standardized units. Omitting
+       this step is what collapsed the old app to `Medium` for every patient.
+    """
     missing = [c for c in FEATURE_NAMES if c not in df.columns]
     if missing:
         st.warning(f"Missing columns in input — filling {len(missing)} missing columns with zeros: {missing}")
         for c in missing:
             df[c] = 0
+    extra = [c for c in df.columns if c not in FEATURE_NAMES]
+    if extra:
+        st.info(f"Ignoring {len(extra)} column(s) not used by this model: {extra}")
     df = df[FEATURE_NAMES].copy()
     df = df.apply(pd.to_numeric, errors="coerce").fillna(0)
-    return df
+    return scaler.transform(df)
 
 def render_probabilities(probs):
     prob_df = pd.DataFrame({"class": list(le.classes_), "probability": probs}) \
@@ -143,12 +166,13 @@ if "Batch" in mode:
             uploaded_file.seek(0)
             input_df = pd.read_csv(uploaded_file, encoding="latin-1")
 
-        X = preprocess_input(input_df)
+        X = preprocess_input(input_df)          # already scaled by the persisted scaler
         preds_enc = model.predict(X)
         probs = model.predict_proba(X)
         preds = le.inverse_transform(preds_enc)
 
-        result = X.copy()
+        # Echo back the user's own columns, not the scaled internal matrix.
+        result = input_df.copy()
         result["Predicted_Risk_Level"] = preds
         for i, cls in enumerate(le.classes_):
             result[f"prob_{cls}"] = probs[:, i]
@@ -171,11 +195,13 @@ else:
     st.markdown('<div class="card"><h3>🧑 Manual input — enter patient features</h3></div>',
                 unsafe_allow_html=True)
 
+    # Issue #5 proved Overall_Risk_Score is a 100% accurate threshold function of
+    # Risk_Level, so asking the user for it made the form trivially self-answering.
+    # It is no longer a model input, so it is no longer asked for.
     RULES = {
         "Age":                {"widget": "slider", "min": 20, "max": 90, "step": 1,   "default": 50},
         "Gender":             {"widget": "select", "options": [("Female", 0), ("Male", 1)]},
         "BMI":                {"widget": "number", "min": 15.0, "max": 50.0, "step": 0.1, "default": 25.0},
-        "Overall_Risk_Score": {"widget": "slider", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.5},
         "Family_History":     {"widget": "yesno"},
         "BRCA_Mutation":      {"widget": "yesno"},
         "H_Pylori_Infection": {"widget": "yesno"},
@@ -191,8 +217,6 @@ else:
           "Air_Pollution", "Occupational_Hazards", "Calcium_Intake"]),
         ("🧬 Genetic / Medical flags",
          ["Family_History", "BRCA_Mutation", "H_Pylori_Infection"]),
-        ("📊 Engineered score",
-         ["Overall_Risk_Score"]),
     ]
 
     def build_widget(feat):
@@ -260,6 +284,45 @@ else:
         }
         st.info(advice.get(pred, ""))
 
+# ---------------- Model provenance (Issue #8) ----------------
+with st.sidebar:
+    st.markdown("### 📋 Model card")
+    m = META.get("metrics", {})
+    st.markdown(
+        f"""
+| | |
+|---|---|
+| **Version** | `{META.get('model_version', '?')}` |
+| **Estimator** | Random Forest, {META.get('config', {}).get('n_estimators', '?')} trees |
+| **Class balancing** | `{META.get('resample', '?')}` |
+| **Features** | {len(FEATURE_NAMES)} (leak-free) |
+| **Trained** | {META.get('trained_at', '?')[:19].replace('T', ' ')} UTC |
+
+**Held-out test (400 rows)**
+| Metric | Value |
+|---|---|
+| Accuracy | {m.get('accuracy', float('nan')):.3f} |
+| Macro F1 | {m.get('f1_macro', float('nan')):.3f} |
+| Macro recall | {m.get('recall_macro', float('nan')):.3f} |
+
+<details>
+<summary>Why not a higher number?</summary>
+
+An earlier version of this model scored **F1 0.9975** by including
+`Overall_Risk_Score` — a column that turned out to be a direct encoding of the
+answer. It also never received standardized inputs, which is why this app used
+to return *Medium* for every single patient.
+
+Both defects are fixed. The scores above are from a model that has only ever
+seen the 17 real risk factors. See `docs/TRAINING_AND_LEAKAGE.md`.
+</details>
+"""
+    , unsafe_allow_html=True)
+
 # ---------------- فوتر ----------------
 st.markdown("---")
-st.caption("Model: saved classifier (see training notebook). For research/education only — not a medical diagnosis.")
+st.caption(
+    f"Model v{META.get('model_version', '?')} — retrain with `python train.py`. "
+    "Metrics are from a held-out split on synthetic data. "
+    "For research/education only — not a medical diagnosis."
+)

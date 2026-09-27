@@ -1,6 +1,25 @@
-streamlit
-pandas
-numpy
-joblib
-scikit-learn
-xgboost
+# Runtime dependencies for the Cancer Risk Predictor.
+#
+# Pinned to the versions the model in docs/TRAINING_AND_LEAKAGE.md was trained
+# and verified with, so `python train.py` reproduces the published metrics.
+# Python 3.14.7.
+
+# --- training (required by train.py) ---
+numpy==2.5.3
+pandas==3.0.6
+scikit-learn==1.9.1
+joblib==1.6.0
+
+# --- serving (required by app.py) ---
+streamlit==1.64.0
+
+# --- optional ---
+# Only needed for `python train.py --resample smote`, the Issue #9 comparison
+# arm. NOT required to train or serve the shipped model, which uses
+# RandomForestClassifier(class_weight="balanced") and therefore needs no
+# resampling library at inference time.
+# imbalanced-learn==0.14.2
+
+# No longer used by any code path. The notebook's XGBoost experiments were
+# discarded (Issue #4) and the shipped model is a RandomForest.
+# xgboost==3.4.1
