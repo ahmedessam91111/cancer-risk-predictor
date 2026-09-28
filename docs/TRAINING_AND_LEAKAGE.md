@@ -341,6 +341,8 @@ streamlit run app.py
 the fitted forest hashed identically
 (`sha256(feature|threshold|children_left|children_right)` over all 100 trees =
 `aeca50e59b3dc670177a29e05a0e6c84`), and every metric matched to 4 decimals. The
+canonical fingerprint function is `forest_sha256()` in `train.py`; it is recorded
+in the bundle and manifest, and `train.py --verify` asserts it automatically. The
 `model_bundle.joblib` **file hash** does differ between runs, solely because the
 bundle embeds a `trained_at` UTC timestamp; `manifest.json` records that hash
 per run.

@@ -100,9 +100,9 @@ import numpy as np
 import pandas as pd
 import sklearn
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (accuracy_score, classification_report,
-                             confusion_matrix, f1_score, precision_score,
-                             recall_score)
+from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
+                             classification_report, confusion_matrix,
+                             f1_score, precision_score, recall_score)
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
@@ -186,6 +186,30 @@ def sha256_of(path: Path, normalize_eol: bool = False) -> str:
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk.replace(b"\r\n", b"\n") if normalize_eol else chunk)
+    return h.hexdigest()
+
+
+def forest_sha256(model) -> str:
+    """
+    Canonical bitwise fingerprint of a fitted forest.
+
+    DOCUMENTED SERIALIZATION -- this is the method the project pins, so the
+    value is reproducible by anyone who runs it on the same forest:
+
+        sha256( concat over trees, in estimator order, of
+                feature | threshold | children_left | children_right )
+
+    Each array is fed as its native numpy bytes (tobytes()). This is the
+    canonical definition of the project's forest fingerprint: it reproduces
+    the value published in docs/TRAINING_AND_LEAKAGE.md, and -- because a
+    bitwise fingerprint is only meaningful if the serialization is pinned --
+    it must not be redefined casually.
+    """
+    h = hashlib.sha256()
+    for est in model.estimators_:
+        t = est.tree_
+        for arr in (t.feature, t.threshold, t.children_left, t.children_right):
+            h.update(arr.tobytes())
     return h.hexdigest()
 
 
@@ -413,6 +437,9 @@ def evaluate(result: dict, classes: list[str]) -> dict:
         "n_test_rows": int(len(y_test)),
         "n_train_rows": int(len(result["y_train"])),
         "accuracy": round(accuracy_score(y_test, pred), 4),
+        "balanced_accuracy": round(balanced_accuracy_score(y_test, pred), 4),
+        "high_recall": per_class["High"]["recall"],
+        "high_precision": per_class["High"]["precision"],
         "precision_macro": round(precision_score(y_test, pred, average="macro", labels=labels, zero_division=0), 4),
         "recall_macro": round(recall_score(y_test, pred, average="macro", labels=labels, zero_division=0), 4),
         "f1_macro": round(f1_score(y_test, pred, average="macro", labels=labels, zero_division=0), 4),
@@ -506,10 +533,13 @@ def save(result: dict, metrics: dict, cv: dict, features: list[str],
                 "scaler": "StandardScaler(fit on train split only)",
             },
             "dataset_sha256": DATA_SHA256,
+            "forest_sha256": forest_sha256(result["model"]),
             "environment": current_env(),
             "environment_matches_reference": current_env() == REFERENCE_ENV,
             "metrics": {k: metrics[k] for k in
-                        ("accuracy", "precision_macro", "recall_macro", "f1_macro", "f1_weighted")},
+                        ("accuracy", "balanced_accuracy",
+                         "high_recall", "high_precision",
+                         "precision_macro", "recall_macro", "f1_macro", "f1_weighted")},
         },
     }
     joblib.dump(bundle, bundle_path)
@@ -540,6 +570,7 @@ def save(result: dict, metrics: dict, cv: dict, features: list[str],
             "sha256_raw": sha256_of(DATA_PATH),
             "rows": EXPECTED_ROWS, "columns": EXPECTED_COLUMNS,
         },
+        "forest_sha256": forest_sha256(result["model"]),
         "environment": {
             "python": platform.python_version(),
             "numpy": np.__version__, "pandas": pd.__version__,
@@ -616,6 +647,17 @@ def verify(out_dir: Path = OUT_DIR) -> int:
         print(f"[FAIL] bundle was trained on dataset {md.get('dataset_sha256')}"); ok = False
     else:
         print(f"[ok]   bundle trained on the validated dataset (v{md.get('model_version')})")
+
+    recorded = md.get("forest_sha256")
+    actual = forest_sha256(_final_estimator(model)) if hasattr(_final_estimator(model), "estimators_") else None
+    if recorded and actual:
+        if actual == recorded:
+            print(f"[ok]   forest bitwise fingerprint matches ({actual[:16]}...)")
+        else:
+            print(f"[FAIL] forest fingerprint {actual[:16]}... != recorded {recorded[:16]}...")
+            ok = False
+    else:
+        print("[warn] forest fingerprint not recorded (older bundle); skipping")
 
     # End-to-end: a round trip through the documented inference path.
     probe = pd.DataFrame([{f: 0.0 for f in feats}])
