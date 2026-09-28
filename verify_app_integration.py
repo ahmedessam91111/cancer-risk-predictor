@@ -1,15 +1,21 @@
 """
-Verify that `app.py` is wired to exactly the artifacts `train.py` produces.
+Verify that `app.py` is wired to exactly the production artifacts
+`export_production.py` writes, and that those artifacts reproduce the model
+`train.py` produces.
 
 Issue #8 step 8 asks to "verify that the Streamlit app uses exactly these
-artifacts". This script checks that two ways, neither of which requires a
-running Streamlit server:
+artifacts". This script checks that in five layers:
 
-  1. STATIC  -- parse app.py with `ast` and assert what it loads, what it
-     scales, and what it never mentions.
-  2. BEHAVIOURAL -- pull app.py's real `preprocess_input` function out of its
-     source and execute it against the real bundle, then confirm its output is
-     byte-identical to the reference path used in train.py's evaluation.
+  1. STATIC     -- parse app.py with `ast`: assert which files it loads, that it
+                   loads them from artifacts/production/ and not the deprecated
+                   root .pkl files, and that it does not scale inputs itself.
+  2. BEHAVIOURAL-- pull app.py's real `preprocess_input` out of its source and
+                   execute it on hostile input (scrambled columns, decoys);
+                   the raw matrix it returns must match the training reference.
+  3. END TO END -- score the 400 held-out rows through the production pipeline
+                   and require bit-identical predictions to train.py's bundle.
+  4. PURITY     -- leak-free feature set; no train/test row overlap.
+  5. LIVE       -- boot the real app via Streamlit's AppTest and click through.
 
 Run:  python verify_app_integration.py
 """
@@ -29,6 +35,12 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
 APP_PATH = BASE_DIR / "app.py"
+PROD_DIR = BASE_DIR / "artifacts" / "production"
+MODEL_PATH = PROD_DIR / "model.pkl"
+LABEL_PATH = PROD_DIR / "label_encoder.pkl"
+FEATURES_PATH = PROD_DIR / "feature_names.pkl"
+METADATA_PATH = PROD_DIR / "metadata.json"
+PROD_FILES = (MODEL_PATH, LABEL_PATH, FEATURES_PATH, METADATA_PATH)
 BUNDLE_PATH = BASE_DIR / "artifacts" / "model_bundle.joblib"
 DATA_PATH = BASE_DIR / "cancer-risk-factors.csv"
 
@@ -73,9 +85,14 @@ def stub_streamlit() -> "types.ModuleType":
 
 def main() -> int:
     print("=" * 78)
-    print("1. STATIC -- what does app.py actually load and reference?")
+    print("1. STATIC -- which artifacts does app.py load, and from where?")
     print("=" * 78)
 
+    missing = [p for p in PROD_FILES if not p.exists()]
+    if missing:
+        print(f"[FAIL] missing production artifacts: {[p.name for p in missing]}")
+        print("       run `python export_production.py` first")
+        return 1
     if not BUNDLE_PATH.exists():
         print(f"[FAIL] {BUNDLE_PATH} missing — run `python train.py` first")
         return 1
@@ -88,55 +105,56 @@ def main() -> int:
     loaded_paths = [
         n.value for n in ast.walk(tree)
         if isinstance(n, ast.Constant) and isinstance(n.value, str)
-        and (n.value.endswith(".pkl") or n.value.endswith(".joblib"))
+        and (n.value.endswith(".pkl") or n.value.endswith(".joblib") or n.value.endswith(".json"))
     ]
 
-    check("model_bundle.joblib" in " ".join(loaded_paths),
-          "app.py loads the bundle from train.py", ", ".join(sorted(set(loaded_paths))))
-    check(not any(p in " ".join(loaded_paths)
-                  for p in ("model_xgb_new.pkl", "label_encoder.pkl", "feature_names.pkl")),
-          "app.py no longer loads the three superseded .pkl files")
-    check("scaler" in src and "scaler.transform" in src,
-          "app.py applies the persisted scaler before predicting (Issue #2)")
-    widget_src = src[src.find("RULES = {"):] if "RULES = {" in src else ""
-    check('"Overall_Risk_Score": {"widget"' not in widget_src,
+    for fname in ("model.pkl", "label_encoder.pkl", "feature_names.pkl", "metadata.json"):
+        check(fname in " ".join(loaded_paths),
+              f"app.py references `{fname}`", sorted(set(loaded_paths)))
+    check("production" in " ".join(loaded_paths) or "PROD_DIR" in src,
+          "app.py resolves artifacts under the production path",
+          "artifacts/production")
+    check("model_xgb_new.pkl" not in src,
+          "app.py never loads the legacy model_xgb_new.pkl")
+    check('"Overall_Risk_Score": {"widget"' not in src,
           "app.py removed the Overall_Risk_Score slider from the manual form")
     check('["Overall_Risk_Score"]' not in src,
           "Overall_Risk_Score is not in any widget group (Issue #5)")
+    check("scaler.transform" not in src,
+          "app.py no longer scales inputs itself — the scaler is embedded in model.pkl",
+          "Pipeline [StandardScaler -> RandomForest]")
 
     print("\n" + "=" * 78)
     print("2. BEHAVIOURAL -- does app.py's own code produce the model's real input?")
     print("=" * 78)
 
-    bundle = joblib.load(BUNDLE_PATH)
-    model, scaler, le = bundle["model"], bundle["scaler"], bundle["label_encoder"]
-    feats = bundle["feature_names"]
+    prod_model = joblib.load(MODEL_PATH)
+    le = joblib.load(LABEL_PATH)
+    feats = joblib.load(FEATURES_PATH)
 
-    ns = {
-        "pd": pd, "np": np, "st": stub_streamlit(),
-        "scaler": scaler, "FEATURE_NAMES": feats,
-    }
+    ns = {"pd": pd, "np": np, "st": stub_streamlit(), "FEATURE_NAMES": feats}
     preprocess_input = load_app_function("preprocess_input", ns)
     print("[ok]   extracted app.py's real preprocess_input() and executed it")
 
     df = pd.read_csv(DATA_PATH)
     sample = df[feats].head(200).copy()
 
-    # Hostile input: reversed column order plus decoy columns, SAME row order,
-    # so the comparison against the reference is element-for-element.
+    # Hostile input: reversed column order plus decoy columns, SAME row order.
+    # The app must return EXACTLY the training matrix (raw — scaling is the
+    # pipeline's job), with decoys dropped.
     hostile = sample[list(reversed(feats))].copy()
     hostile["Patient_ID"] = range(len(hostile))
     hostile["Overall_Risk_Score"] = 0.9      # decoy: must be ignored, not used
     hostile["Totally_Unknown"] = 42.0
 
     X_app = np.asarray(preprocess_input(hostile))
-    X_ref = scaler.transform(sample[feats])
+    X_ref = np.asarray(sample[feats])
     maxdiff = float(np.abs(X_app - X_ref).max())
     check(X_app.shape == X_ref.shape,
-          "app output shape matches the reference matrix",
+          "app output shape matches the training matrix (raw, unscaled)",
           f"{X_app.shape} vs {X_ref.shape}")
     check(maxdiff < 1e-12,
-          "app output is bit-identical to train.py's path, despite scrambled columns",
+          "app output is bit-identical to the raw training matrix, despite scrambled columns",
           f"max abs diff {maxdiff:.2e}")
 
     h_app = hashlib.sha256(np.ascontiguousarray(X_app).tobytes()).hexdigest()
@@ -152,7 +170,7 @@ def main() -> int:
           f"max abs diff {np.abs(aligned - X_ref).max():.2e}")
 
     print("\n" + "=" * 78)
-    print("3. END TO END -- held-out predictions through the app's code path")
+    print("3. END TO END -- production artifacts reproduce the bundle's model")
     print("=" * 78)
 
     from sklearn.model_selection import train_test_split
@@ -163,22 +181,39 @@ def main() -> int:
         df[feats], y, test_size=0.2, random_state=42, stratify=y)
 
     X_te_app = np.asarray(preprocess_input(X_te[list(reversed(feats))]))
-    pred_te = le.inverse_transform(model.predict(X_te_app))
-    dist = pd.Series(pred_te).value_counts().to_dict()
+    pred_prod = le.inverse_transform(prod_model.predict(X_te_app))
+    dist = pd.Series(pred_prod).value_counts().to_dict()
 
     check(len(dist) == 3,
           "all three risk levels appear on the 400 held-out rows (was: Medium only)",
           str(dist))
-    check(int(pd.Series(pred_te).eq("High").sum()) > 0,
+    check(int(pd.Series(pred_prod).eq("High").sum()) > 0,
           "the High class is reachable at all (was: 0 High out of 400)",
-          f"{int(pd.Series(pred_te).eq('High').sum())} High")
+          f"{int(pd.Series(pred_prod).eq('High').sum())} High")
 
-    # Reproduce the pre-Issue-#8 bug deliberately: raw, unscaled values.
-    raw_pred = le.inverse_transform(model.predict(X_te[feats]))
-    raw_dist = pd.Series(raw_pred).value_counts().to_dict()
-    check(raw_dist != dist,
-          "omitting the scaler changes predictions (proves the scaler is load-bearing)",
-          f"unscaled {raw_dist}  vs  app path {dist}")
+    # Bitwise: the production pipeline (scaler embedded) vs train.py's bundle path.
+    bundle = joblib.load(BUNDLE_PATH)
+    pred_bundle = le.inverse_transform(
+        bundle["model"].predict(bundle["scaler"].transform(X_te_app)))
+    check(np.array_equal(pred_prod, pred_bundle),
+          "production pipeline predictions are bit-identical to train.py's bundle path",
+          f"{dict(pd.Series(pred_prod).value_counts())}")
+
+    # The scaler is load-bearing: feeding the bare forest raw values must NOT
+    # give the same answer (this is the pre-Issue-#8 collapse).
+    bare_forest = prod_model.steps[-1][1]
+    raw_pred = le.inverse_transform(bare_forest.predict(X_te_app))
+    check(not np.array_equal(raw_pred, pred_prod),
+          "the embedded scaler is load-bearing (raw values change the answer)",
+          f"unscaled {dict(pd.Series(raw_pred).value_counts())} vs app {dict(dist)}")
+
+    md = __import__("json").loads(METADATA_PATH.read_text(encoding="utf-8"))
+    check(abs(float(md["metrics"]["accuracy"]) - 0.8475) < 1e-9,
+          "metadata.json records the published held-out accuracy",
+          f"{md['metrics']['accuracy']:.4f}")
+    check(md.get("forest_sha256", "").startswith("aeca50e59b3dc670"),
+          "metadata.json records the canonical forest fingerprint",
+          md.get("forest_sha256", "")[:16])
 
     print("\n" + "=" * 78)
     print("4. TRAIN/TEST PURITY -- app uses the deployed model, not a refit")

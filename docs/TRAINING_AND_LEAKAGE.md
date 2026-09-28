@@ -347,6 +347,19 @@ in the bundle and manifest, and `train.py --verify` asserts it automatically. Th
 bundle embeds a `trained_at` UTC timestamp; `manifest.json` records that hash
 per run.
 
+**Two important nuances about "the model hash changed":**
+
+1. `model_bundle.joblib`'s *file* hash legitimately drifts between runs because
+   it embeds a `trained_at` timestamp. That is why identity is pinned on the
+   `forest_sha256` array fingerprint instead.
+2. Even a file with no timestamp — `artifacts/production/model.pkl` — will hash
+   differently if re-exported in a *new process*, because
+   `PYTHONHASHSEED` is randomized per process and pickle's byte stream depends
+   on it. The model **content** is identical (the array-based `forest_sha256`
+   and `scaler_fingerprint` are process-stable). File-level sha256 therefore
+   means "unchanged since this export"; content fingerprints mean "this is the
+   canonical model". Both are checked by `export_production.py --verify-only`.
+
 `verify_app_integration.py` goes further than reading the source. It has five
 layers:
 

@@ -1,4 +1,5 @@
 # app.py
+import json
 import os
 import streamlit as st
 import pandas as pd
@@ -10,27 +11,39 @@ st.set_page_config(page_title="Cancer Risk Predictor", page_icon="🧬",
                    layout="wide", initial_sidebar_state="collapsed")
 
 # ---------------- مسارات الملفات (نسبية عشان تشتغل في أي مكان) ----------------
-# Issue #8: the app now reads the single bundle written by `python train.py`
-# instead of three loose .pkl files that could drift out of sync with each other.
+# Issue #8 final layout: the app runs from the four production artifacts written
+# by `python export_production.py` -- model.pkl (a Pipeline that embeds the
+# fitted scaler, so no unscaled input can reach the forest), label_encoder.pkl,
+# feature_names.pkl, and metadata.json. The deprecated root-level .pkl files are
+# never read here.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BUNDLE_PATH = os.path.join(BASE_DIR, "artifacts", "model_bundle.joblib")
+PROD_DIR = os.path.join(BASE_DIR, "artifacts", "production")
+MODEL_PATH      = os.path.join(PROD_DIR, "model.pkl")
+LABEL_PATH      = os.path.join(PROD_DIR, "label_encoder.pkl")
+FEATURES_PATH   = os.path.join(PROD_DIR, "feature_names.pkl")
+METADATA_PATH   = os.path.join(PROD_DIR, "metadata.json")
+PROD_FILES = (MODEL_PATH, LABEL_PATH, FEATURES_PATH, METADATA_PATH)
 
 @st.cache_resource
 def load_artifacts():
-    if not os.path.exists(BUNDLE_PATH):
+    missing = [p for p in PROD_FILES if not os.path.exists(p)]
+    if missing:
         st.error(
-            f"Model bundle not found at `{BUNDLE_PATH}`.\n\n"
-            "Train it first:\n\n```\npython train.py\n```"
+            "Missing production artifacts:\n\n```\n"
+            + "\n".join(f"  {p}" for p in missing)
+            + "\n```\n\n"
+            "Build them first (no retraining needed if `train.py` already ran):\n\n"
+            "```\npython export_production.py\n```"
         )
         st.stop()
-    return joblib.load(BUNDLE_PATH)
+    model = joblib.load(MODEL_PATH)          # Pipeline [StandardScaler -> RandomForest]
+    le = joblib.load(LABEL_PATH)
+    feature_names = joblib.load(FEATURES_PATH)
+    with open(METADATA_PATH, encoding="utf-8") as fh:
+        meta = json.load(fh)
+    return model, le, feature_names, meta
 
-BUNDLE = load_artifacts()
-model     = BUNDLE["model"]
-scaler    = BUNDLE["scaler"]          # Issue #2: the fitted scaler now ships with the model
-le        = BUNDLE["label_encoder"]
-FEATURE_NAMES = BUNDLE["feature_names"]
-META      = BUNDLE["metadata"]
+model, le, FEATURE_NAMES, META = load_artifacts()
 
 RISK_COLORS = {"Low": "#27ae60", "Medium": "#f39c12", "High": "#e74c3c"}
 
@@ -118,10 +131,12 @@ def preprocess_input(df):
 
     1. Column set AND order must equal `FEATURE_NAMES`. The model's thresholds
        are positional, so a reordered CSV silently produces wrong predictions.
-    2. The values must be standardized with the scaler that was fitted during
-       training. Trees are not scale-invariant: a threshold of 0.5 means
-       something different in raw units than in standardized units. Omitting
-       this step is what collapsed the old app to `Medium` for every patient.
+    2. Standardization happens INSIDE model.pkl: the shipped artifact is a
+       Pipeline whose first step is the scaler fitted on the training split.
+       Inputs are deliberately returned UNSCALED, so there is no code path that
+       can reach the forest with raw values. (Older versions scaled here and
+       relied on a loose scaler; that is exactly the failure mode Issue #2
+       documented.)
     """
     missing = [c for c in FEATURE_NAMES if c not in df.columns]
     if missing:
@@ -132,8 +147,7 @@ def preprocess_input(df):
     if extra:
         st.info(f"Ignoring {len(extra)} column(s) not used by this model: {extra}")
     df = df[FEATURE_NAMES].copy()
-    df = df.apply(pd.to_numeric, errors="coerce").fillna(0)
-    return scaler.transform(df)
+    return df.apply(pd.to_numeric, errors="coerce").fillna(0)
 
 def render_probabilities(probs):
     prob_df = pd.DataFrame({"class": list(le.classes_), "probability": probs}) \
@@ -166,7 +180,7 @@ if "Batch" in mode:
             uploaded_file.seek(0)
             input_df = pd.read_csv(uploaded_file, encoding="latin-1")
 
-        X = preprocess_input(input_df)          # already scaled by the persisted scaler
+        X = preprocess_input(input_df)    # ordered + cleaned; scaling happens inside model.pkl
         preds_enc = model.predict(X)
         probs = model.predict_proba(X)
         preds = le.inverse_transform(preds_enc)
@@ -322,7 +336,8 @@ seen the 17 real risk factors. See `docs/TRAINING_AND_LEAKAGE.md`.
 # ---------------- فوتر ----------------
 st.markdown("---")
 st.caption(
-    f"Model v{META.get('model_version', '?')} — retrain with `python train.py`. "
+    f"Model v{META.get('model_version', '?')} — artifacts rebuilt with "
+    "`python export_production.py`. "
     "Metrics are from a held-out split on synthetic data. "
     "For research/education only — not a medical diagnosis."
 )
