@@ -114,6 +114,33 @@ BASE_DIR = Path(__file__).resolve().parent
 
 MODEL_VERSION = "2.0.0"
 
+# --- reference environment ---
+# The library versions the published metrics in docs/ were produced with.
+#
+# This is load-bearing, not decoration. RandomForestClassifier is NOT stable
+# across scikit-learn versions: with identical data, identical parameters and
+# random_state=42, scikit-learn 1.8.0 builds a materially different forest than
+# 1.9.1 does. Measured on this dataset:
+#
+#     scikit-learn 1.9.1   F1 macro 0.6572   High recall 0.300
+#     scikit-learn 1.8.0   F1 macro 0.5002   High recall 0.050
+#
+# The 1.8.0 model catches 1 of 20 High-risk patients instead of 6. This is not
+# a hyperparameter difference; `random_state` does not protect against it.
+# train.py therefore reports loudly when the environment does not match, and
+# records the actual versions in the bundle and manifest either way.
+REFERENCE_ENV = {
+    "python": "3.14.7",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "joblib": "1.6.0",
+}
+
+# scikit-learn versions known to produce a different forest from the reference.
+# The metric impact is severe enough to be worth calling out by name.
+_SKLEARN_SENSITIVE = True
+
 # --- dataset ---
 DATA_PATH = BASE_DIR / "cancer-risk-factors.csv"
 DATA_SHA256 = "01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5"
@@ -160,6 +187,52 @@ def sha256_of(path: Path, normalize_eol: bool = False) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk.replace(b"\r\n", b"\n") if normalize_eol else chunk)
     return h.hexdigest()
+
+
+def current_env() -> dict:
+    return {
+        "python": platform.python_version(),
+        "scikit-learn": sklearn.__version__,
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "joblib": joblib.__version__,
+    }
+
+
+def check_environment() -> dict:
+    """
+    Report whether this interpreter matches the one the metrics came from.
+
+    A mismatch does not stop training -- the run is still valid, it just is not
+    the run the documentation describes. So this warns loudly, prints the
+    consequence, and lets the caller carry on with the mismatch recorded in the
+    artifacts.
+    """
+    env = current_env()
+    drift = {k: (REFERENCE_ENV[k], v) for k, v in env.items()
+             if v != REFERENCE_ENV.get(k)}
+
+    if not drift:
+        print("[ok]   environment matches the reference "
+              f"(python {env['python']}, scikit-learn {env['scikit-learn']})")
+        return env
+
+    print("\n" + "!" * 78)
+    print("WARNING: this environment differs from the one the published")
+    print("         metrics were produced with.")
+    print("!" * 78)
+    for k, (want, got) in drift.items():
+        print(f"  {k:<14} expected {want:<10} got {got}")
+    if "scikit-learn" in drift and _SKLEARN_SENSITIVE:
+        print()
+        print("  RandomForestClassifier is not reproducible across scikit-learn")
+        print("  versions even with a fixed random_state. On this dataset:")
+        print("      scikit-learn 1.9.1 -> F1 macro 0.6572, High recall 0.300")
+        print("      scikit-learn 1.8.0 -> F1 macro 0.5002, High recall 0.050")
+        print("  The numbers this run prints will NOT match docs/.")
+        print("  Fix with:  pip install -r requirements.txt")
+    print("!" * 78 + "\n")
+    return env
 
 
 def validate_dataset() -> pd.DataFrame:
@@ -433,6 +506,8 @@ def save(result: dict, metrics: dict, cv: dict, features: list[str],
                 "scaler": "StandardScaler(fit on train split only)",
             },
             "dataset_sha256": DATA_SHA256,
+            "environment": current_env(),
+            "environment_matches_reference": current_env() == REFERENCE_ENV,
             "metrics": {k: metrics[k] for k in
                         ("accuracy", "precision_macro", "recall_macro", "f1_macro", "f1_weighted")},
         },
@@ -446,6 +521,8 @@ def save(result: dict, metrics: dict, cv: dict, features: list[str],
         "resample": resample,
         "n_features": len(features),
         "feature_names": features,
+        "environment": current_env(),
+        "environment_matches_reference": current_env() == REFERENCE_ENV,
         "held_out_test": metrics,
         "cross_validation": cv,
         "feature_importance": _feature_importance(result["model"], features),
@@ -575,6 +652,8 @@ def main() -> int:
     print(f"model version {MODEL_VERSION}")
     print(f"python {platform.python_version()} | sklearn {sklearn.__version__}")
     print(f"numpy {np.__version__} | pandas {pd.__version__}")
+
+    env = check_environment()
 
     print("validating dataset")
     df = validate_dataset()
