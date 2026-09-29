@@ -1,4 +1,4 @@
-# Issue registry — #7, #8, #9 (Tier 3), #10 and #11 (Tier 4)
+# Issue registry — #7, #8, #9 (Tier 3), #10–#12 (Tier 4)
 
 This file records the GitHub issue definitions and their resolution evidence.
 Issues #1–#6 are documented in `DATASET_PROVENANCE.md`,`T2_PROVENANCE_AND_LEAKAGE.md`
@@ -189,6 +189,64 @@ rejected because it dropped High recall 0.30 → 0.20 (conflicts with #10).
 
 ---
 
+## Issue #12 — Check what the model is actually keying on — RESOLVED
+
+**Definition (as filed):**
+> Goal. Check what the model is actually keying on, and whether it makes
+> sense. … What are the top five features by importance? Use permutation
+> importance on held-out data, not just feature_importances_ — and make sure
+> you know why that distinction matters. Do the top features match what
+> medical literature says about cancer risk factors? Is there one feature that
+> dominates everything else? If so, what are the possible explanations, and how
+> would you tell them apart? Are any of your features near-duplicates of each
+> other? Look at BMI and Obesity, and at Physical_Activity and
+> Physical_Activity_Level. What does that do to importance scores?
+
+**Resolution (analysis-only; no model change).** Full write-up in
+`docs/ISSUE12_FEATURE_IMPORTANCE.md`; evidence script
+`analyze_feature_importance.py`; figure `docs/figures/permutation_importance.png`.
+
+* **Top 5 by held-out permutation importance (accuracy):** Alcohol_Use
+  (+0.0495), Air_Pollution (+0.0470), Smoking (+0.0435), Diet_Red_Meat
+  (+0.0375), Occupational_Hazards (+0.0330). Under f1-macro /
+  balanced-accuracy the same cluster reorders slightly (Air_Pollution,
+  Smoking, Alcohol_Use, diet, occupational); under High-recall **Obesity**
+  enters the top 5. Diet_Salted_Processed swaps with Diet_Red_Meat by scorer.
+* **Why the distinction matters:** `feature_importances_` is computed on
+  training data during fit and is biased toward high-cardinality/continuous
+  and correlated features; permutation importance on the held-out set
+  measures how much real predictions need a feature. Visible proof: **BMI is
+  rank 8 by impurity (0.0451) and rank ≈17 (≈0) by permutation.**
+* **Medical literature:** the top cluster is behavioural/environmental
+  exposures — smoking, alcohol, air pollution (IARC Group 1), processed/red
+  meat, occupational hazards — all established risk factors with the correct
+  direction; Fruit_Veg_Intake is the sole *negative* correlate (−0.124),
+  the protective direction the literature predicts.
+* **Dominance:** none. Ratios #1/#2 are 1.05–1.42 across scorers; the largest
+  single feature (Air_Pollution) contributes ≤ ~19% of total held-out signal.
+* **Redundant pairs — surprise:** BMI vs Obesity (Spearman **−0.003**) and
+  Physical_Activity vs Physical_Activity_Level (**+0.023**) are **not**
+  correlated in this dataset — independent synthetic variables. No dilution
+  effect exists; `Obesity` carries the signal (perm +0.030), `BMI` and
+  `Physical_Activity_Level` carry **zero**. Decision: keep both columns
+  (no retrain); BMI / Physical_Activity_Level documented as drop candidates
+  for any future retrain.
+* **Also surprising:** Age ≈ 0 importance (a top real-world factor absent
+  from this synthetic data); BRCA_Mutation / H_Pylori ≈ 0 (effects are
+  conditional on `Cancer_Type`, which is excluded by design — main-effect
+  measures under-report them); High-recall permutation noise is high
+  (n=20 High class).
+
+**Bottom line:** the model keys on modifiable exposure/lifestyle scores in
+medically sensible directions, with no single dominant feature — i.e. a good
+score for reasons that make sense *within this synthetic dataset*, which does
+not encode age/genetics strongly.
+
+**Evidence:** `analyze_feature_importance.py`, `docs/ISSUE12_FEATURE_IMPORTANCE.md`,
+`docs/figures/permutation_importance.png` + `.csv`, this section.
+
+---
+
 ## Issue #10 — Choose a metric that matches the cost of being wrong — RESOLVED
 
 **Resolution:** primary metric = **High-class recall**, reported with
@@ -214,4 +272,5 @@ evidence script `analyze_error_costs.py`, commit `f2ee071`.
 | 9 | Get resampling right | RESOLVED | this file |
 | 10 | Choose a metric matching the cost of being wrong | RESOLVED | `docs/METRIC_SELECTION.md` |
 | 11 | Check whether the displayed probabilities are real | RESOLVED — hybrid calibration shipped | this file |
-| 12–13 | (not yet specified) | OPEN | awaiting definitions |
+| 12 | Check what the model is actually keying on | RESOLVED — permutation-importance audit | `docs/ISSUE12_FEATURE_IMPORTANCE.md` |
+| 13 | (not yet specified) | OPEN | awaiting definition |

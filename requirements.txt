@@ -13,6 +13,11 @@ joblib==1.6.0
 # --- serving (required by app.py) ---
 streamlit==1.64.0
 
+# --- analysis / reporting (required by analyze_feature_importance.py) ---
+# Used to render the Issue #12 permutation-importance plot
+# (docs/figures/permutation_importance.png). Not needed to train or serve.
+matplotlib==3.11.2
+
 # --- optional ---
 # Only needed for `python train.py --resample smote`, the Issue #9 comparison
 # arm. NOT required to train or serve the shipped model, which uses

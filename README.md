@@ -11,6 +11,7 @@ A 3-class ML web app (Streamlit) that predicts **Cancer Risk Level** — *Low / 
 | `export_production.py` | Builds the 4-file production artifact set from the verified bundle (calibrated by default) |
 | `calibrated_model.py` | Issue #11 hybrid wrapper: raw-forest labels + calibrated probabilities |
 | `analyze_probability_calibration.py` | Issue #11 calibration analysis (Brier, ECE, reliability) — read-only |
+| `analyze_feature_importance.py` | Issue #12 permutation-importance audit (plot → `docs/figures/`) — read-only |
 | `verify_dataset.py` | Dataset integrity + provenance checks |
 | `verify_app_integration.py` | Proves `app.py` uses exactly the production artifacts (27 checks) |
 | `audit_overall_risk_score.py` | Target-leakage audit (Issues #5, #6) |
