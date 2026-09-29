@@ -15,7 +15,7 @@ Original training lived in `Cancer_Risk_Prediction_(ML).ipynb` and, per Issue
 #4, the shipped artifact came from cell 10 (execution 55) saved by cell 50
 (execution 102). That cell chain is:
 
-    cell 2   df    = pd.read_csv('/content/cancer-risk-factors.csv')
+    cell 2   df    = pd.read_csv('/content/cancer-risk-factors.csv')  # Issue #13: notebooks read the tracked local file now
     cell 4   X     = df.drop(columns=['Risk_Level','Patient_ID','Cancer_Type'])
             y     = LabelEncoder().fit_transform(df['Risk_Level'])
     cell 8   train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)

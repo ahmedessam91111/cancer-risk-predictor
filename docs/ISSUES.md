@@ -1,4 +1,4 @@
-# Issue registry — #7, #8, #9 (Tier 3), #10–#12 (Tier 4)
+# Issue registry — #7, #8, #9 (Tier 3), #10–#13 (Tier 4)
 
 This file records the GitHub issue definitions and their resolution evidence.
 Issues #1–#6 are documented in `DATASET_PROVENANCE.md`,`T2_PROVENANCE_AND_LEAKAGE.md`
@@ -247,6 +247,45 @@ not encode age/genetics strongly.
 
 ---
 
+## Issue #13 — Anyone who clones this repo can obtain the exact dataset — RESOLVED
+
+**Definition (as filed):**
+> Goal. Anyone who clones this repo can obtain the exact dataset your model was
+> trained on. … If someone cloned this repo today, what exactly would they have
+> to do to get the dataset? Try it, and write down where it breaks. Where did
+> the CSV originally come from, and does its licence allow you to commit it
+> here? How many rows and columns should it have? How would a future reader
+> know the file they downloaded is the same one you used?
+
+**Resolution (evidence first, then fixes):**
+
+* **Fresh clone, tried and documented:** the dataset was already committed in
+  `9a66cdd` (Issue #1) and pinned `-text` in `.gitattributes`, so a cloned
+  `cancer-risk-factors.csv` is byte-identical (141,851 bytes, SHA-256
+  `01291f8b…82a5`) and loads `(2000, 21)`. The only thing that broke in the
+  clone: the notebooks read the Colab-only path `/content/cancer-risk-factors.csv`.
+* **Origin & licence:** upstream identified as **Tarek Masryo, "Cancer Risk
+  Factors & Types (2,000 Rows)"** — Kaggle `tarekmasryo/cancer-risk-factors-dataset`,
+  mirrored at Hugging Face `tarekmasryo/cancer-risk-factors-data`. Licence
+  **CC BY 4.0 (Attribution)** — sharing/adaptation is permitted with
+  attribution, so committing the file is allowed (attribution recorded in
+  `docs/DATASET_PROVENANCE.md`).
+* **Byte-identity proof:** the upstream Hugging Face file was downloaded; its
+  SHA-256 exactly matches the recorded hash — the committed file *is* the
+  published file.
+* **Identity for a future reader:** 2,000 rows × 21 columns, SHA-256
+  `01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5`,
+  141,851 bytes — asserted by `verify_dataset.py` and `download_dataset.py`.
+* **Fixes:** notebook read cell now uses the local `cancer-risk-factors.csv`
+  (no `/content/` path); new `download_dataset.py` (fetch + SHA-256 gate);
+  `docs/DATASET_PROVENANCE.md` updated with confirmed origin/licence and a
+  clone-to-dataframe runbook (§10); README gained a Dataset section.
+
+**Evidence:** `download_dataset.py`, `docs/DATASET_PROVENANCE.md`, README
+"Dataset" section, the edited notebook cell, this section.
+
+---
+
 ## Issue #10 — Choose a metric that matches the cost of being wrong — RESOLVED
 
 **Resolution:** primary metric = **High-class recall**, reported with
@@ -273,4 +312,4 @@ evidence script `analyze_error_costs.py`, commit `f2ee071`.
 | 10 | Choose a metric matching the cost of being wrong | RESOLVED | `docs/METRIC_SELECTION.md` |
 | 11 | Check whether the displayed probabilities are real | RESOLVED — hybrid calibration shipped | this file |
 | 12 | Check what the model is actually keying on | RESOLVED — permutation-importance audit | `docs/ISSUE12_FEATURE_IMPORTANCE.md` |
-| 13 | (not yet specified) | OPEN | awaiting definition |
+| 13 | Anyone who clones this repo can obtain the exact dataset | RESOLVED — committed + upstream-confirmed (CC BY 4.0) | `docs/DATASET_PROVENANCE.md`, `download_dataset.py` |

@@ -13,6 +13,7 @@ A 3-class ML web app (Streamlit) that predicts **Cancer Risk Level** — *Low / 
 | `analyze_probability_calibration.py` | Issue #11 calibration analysis (Brier, ECE, reliability) — read-only |
 | `analyze_feature_importance.py` | Issue #12 permutation-importance audit (plot → `docs/figures/`) — read-only |
 | `verify_dataset.py` | Dataset integrity + provenance checks |
+| `download_dataset.py` | Re-fetch + SHA-256-verify the dataset from upstream (Issue #13) |
 | `verify_app_integration.py` | Proves `app.py` uses exactly the production artifacts (27 checks) |
 | `audit_overall_risk_score.py` | Target-leakage audit (Issues #5, #6) |
 | `analyze_error_costs.py` | Cost-aware metric analysis (Issue #10) |
@@ -38,6 +39,26 @@ artifacts/
 The deprecated `model_xgb_new.pkl`, `label_encoder.pkl` and
 `feature_names.pkl` at the repo root are kept as evidence and are **not** read
 by the app. See [`docs/ARTIFACT_AUDIT.md`](docs/ARTIFACT_AUDIT.md).
+
+## 📦 Dataset
+
+The training data is **committed to the repo** — a fresh `git clone` already
+contains it, byte-identical to what produced the published metrics (verified
+Issue #13: upstream download matches the committed file exactly).
+
+| Property | Value |
+|---|---|
+| File | `cancer-risk-factors.csv` (repo root) |
+| Shape | **2,000 rows × 21 columns** |
+| SHA-256 | `01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5` |
+| Size | 141,851 bytes |
+| Upstream | Tarek Masryo, "Cancer Risk Factors & Types (2,000 Rows)" — [Kaggle](https://www.kaggle.com/datasets/tarekmasryo/cancer-risk-factors-dataset) / [Hugging Face](https://huggingface.co/datasets/tarekmasryo/cancer-risk-factors-data) |
+| Licence | **CC BY 4.0 (Attribution)** — share/adapt with attribution |
+
+Verify any copy: `python verify_dataset.py` (full provenance report) or
+`python download_dataset.py --verify-only`. Re-download a byte-identical copy:
+`python download_dataset.py`. Full write-up:
+[`docs/DATASET_PROVENANCE.md`](docs/DATASET_PROVENANCE.md).
 
 ## 🚀 Run locally
 

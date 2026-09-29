@@ -14,30 +14,40 @@
 | Location | repository root |
 | Size | 141,851 bytes |
 | **SHA-256** | `01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5` |
-| Version / date | **none recorded** — no version file, no download script, no dataset card |
-| Tracked in git | **No** |
+| Version / date | **2026-09-29** — upstream confirmed, licence recorded, byte-identity verified (Issue #13) |
+| Tracked in git | **Yes** — committed in `9a66cdd`; pinned `-text` via `.gitattributes` so the SHA-256 is stable across platforms |
 
 ### Source
 
-The dataset is a public "cancer risk factors" synthetic dataset. It is **not
-vendored or downloaded by any code in this repo** — it was uploaded by hand to
-a Google Colab session and read from Colab's local filesystem:
+The dataset is the public **synthetic** dataset "Cancer Risk Factors & Types
+(2,000 Rows)" by **Tarek Masryo**:
 
-```python
-# Cancer_Risk_Prediction_(ML).ipynb  cell 2
-df = pd.read_csv('/content/cancer-risk-factors.csv')
+* Kaggle: `tarekmasryo/cancer-risk-factors-dataset`
+  (<https://www.kaggle.com/datasets/tarekmasryo/cancer-risk-factors-dataset>)
+* Hugging Face mirror: `tarekmasryo/cancer-risk-factors-data`
+  (<https://huggingface.co/datasets/tarekmasryo/cancer-risk-factors-data>),
+  file `data/cancer-risk-factors.csv`
 
-# Multiclass_Classfication-checkpoint.ipynb  cell 2
-df = pd.read_csv("/content/cancer-risk-factors.csv")
+**Licence: CC BY 4.0 (Attribution)** — the file may be shared and adapted with
+attribution, so committing it in this repository is permitted. Attribution to
+the author is recorded in this document. The dataset is a synthetic research /
+educational dataset, **not** intended for clinical use.
+
+**Byte-identity proof (Issue #13, 2026-09-29).** The upstream Hugging Face file
+was downloaded and compared with the committed copy:
+
+```
+upstream sha256: 01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5
+local    sha256: 01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5
+bytes           : 141,851 == 141,851
 ```
 
-`/content/` is a Colab-only path. Neither notebook runs outside Colab without
-editing, and no cell records a download URL, a Kaggle dataset slug, a version
-number, or a retrieval date. The original upstream source therefore **cannot be
-confirmed from the repository** — the file is the only surviving copy.
-
-Filesystem timestamps (`2026-09-13`) date the file's arrival, not its upstream
-publication.
+The committed file **is** the published file. Historial note: when Issue #1 ran,
+neither notebook recorded a download URL, a Kaggle slug, a version, or a
+retrieval date, so upstream could not be confirmed from the repo and the file
+was the only copy. That gap is closed by Issue #13 above: origin, licence, and
+byte-identity are now recorded, and the file is re-obtainable via
+`python download_dataset.py`.
 
 ---
 
@@ -257,8 +267,8 @@ Consequences:
 - Every Optuna study, the tuned `final_rf` (`n_estimators=347, max_depth=19`),
   and all XGBoost experiments in the notebook were **discarded**.
 - The shipped artifact is the notebook's *first attempt*, not its best result.
-- `Multiclass_Classfication-checkpoint.ipynb` contains no `joblib.dump` at all,
-  so it produced no artifact.
+- `Multiclass_Classfication-checkpoint.ipynb` contained no `joblib.dump` at all,
+  so it produced no artifact (deleted as a stale duplicate in Issue #13).
 
 The filename is actively misleading: `model_xgb_new.pkl` is a
 **`RandomForestClassifier`**, and `README.md` describes it as "Trained XGBoost
@@ -271,12 +281,12 @@ use it.
 
 | # | Problem | Severity |
 |---|---|---|
-| 1 | Dataset is **untracked in git**. It exists in no commit, no branch, no tag. One `git clean` destroys it permanently. | **Critical** |
-| 2 | No version, source URL, or retrieval date recorded. The file is the sole copy; upstream cannot be re-fetched or re-verified. | **Critical** |
+| 1 | Dataset was **untracked in git** — no commit, branch, or tag; one `git clean` destroyed it permanently. | **Critical** → RESOLVED in `9a66cdd` (committed + `.gitattributes -text`) |
+| 2 | No version, source URL, or retrieval date recorded; the file was the sole copy and upstream could not be re-fetched or re-verified. | **Critical** → RESOLVED in Issue #13 (upstream = Tarek Masryo, CC BY 4.0; byte-identity verified) |
 | 3 | Feature order is recorded only in a **hand-written** `.pkl`, never in the model (`feature_names_in_` is `None`). Silent-wrong-answer risk if the list is ever edited. | **High** |
 | 4 | Label encoder classes are **hand-written** (`fit(["Low","Medium","High"])`), decoupled from training. | **High** |
 | 5 | Fitted `StandardScaler` was never saved; the model is unusable as shipped and `app.py` mis-scores every input. | **High** (Issue #2) |
-| 6 | Notebooks read a Colab-only absolute path `/content/...`; neither runs elsewhere unmodified. | Medium |
+| 6 | Notebooks read a Colab-only absolute path `/content/...`; neither ran elsewhere unmodified. | Medium → RESOLVED in Issue #13 (notebook reads the tracked local file) |
 | 7 | Training is **not a pipeline** — ~15 experiments mutate shared globals, so the saved model is an accident of execution order. | Medium |
 | 8 | Shipped model is the untuned first baseline; all tuning results discarded. | Medium |
 | 9 | Artifacts come from **two different environments** — model pickled with scikit-learn 1.6.1, encoder with 1.8.0, neither matching the installed 1.9.1. | Medium |
@@ -295,21 +305,22 @@ use it.
 | `verify_dataset.py` | Read-only verifier. 20 checks over dataset identity, shape, quality, target, feature order, and the model contract. `--json` for CI. Exits non-zero on failure. |
 | `docs/DATASET_PROVENANCE.md` | This document. |
 
-### Deliberately NOT changed
+### Deliberately NOT changed (at Issue #1 time)
 
 `app.py`, `model_xgb_new.pkl`, `label_encoder.pkl`, `feature_names.pkl`,
-`Cancer_Risk_Prediction_(ML).ipynb`, and the dataset itself are all untouched,
-per the "investigate first" constraint. Problems 1–12 remain open.
+`Cancer_Risk_Prediction_(ML).ipynb`, and the dataset itself were all untouched
+during Issue #1, per the "investigate first" constraint. Problems 1–12 were
+left open there and closed by later issues.
 
-### Recommended next (Issue #1 completion, needs approval)
+### Recommended next (Issue #1 completion, needs approval) — all now done
 
-| Change | Rationale |
-|---|---|
-| `git add cancer-risk-factors.csv` | Removes problem 1 — the only fix that prevents permanent data loss. |
-| `.gitattributes` → `cancer-risk-factors.csv -text` | Pins stored bytes so the SHA-256 is stable across platforms; without it `core.autocrlf` rewrites LF→CRLF on checkout and the recorded hash breaks on every other machine. |
-| Pin `requirements.txt` to exact versions | Removes problem 9. |
-| Correct the README "XGBoost" claim | Removes problem 10. |
-| Extract a real `train.py` pipeline that emits one bundle (model + scaler + encoder + features) | Removes problems 3, 4, 5, 7 together, by making the contract a single artifact that cannot drift. |
+| Change | Rationale | Status |
+|---|---|---|
+| `git add cancer-risk-factors.csv` | Removed problem 1 — the only fix that prevents permanent data loss. | ✔ done in `9a66cdd` |
+| `.gitattributes` → `cancer-risk-factors.csv -text` | Pinned stored bytes so the SHA-256 is stable across platforms; without it `core.autocrlf` rewrites LF→CRLF on checkout and the recorded hash breaks on every other machine. | ✔ done in `9a66cdd` |
+| Pin `requirements.txt` to exact versions | Removed problem 9. | ✔ done |
+| Correct the README "XGBoost" claim | Removed problem 10. | ✔ done |
+| Extract a real `train.py` pipeline that emits one bundle (model + scaler + encoder + features) | Removed problems 3, 4, 5, 7 together, by making the contract a single artifact that cannot drift. | ✔ done (Tier 3) |
 
 ---
 
@@ -327,7 +338,10 @@ python verify_dataset.py --json
 # Confirm the dataset hash independently of the script
 Get-FileHash cancer-risk-factors.csv -Algorithm SHA256
 
-# Confirm the dataset is NOT yet protected by git
+# Re-fetch a byte-identical copy from upstream (verified; Issue #13)
+python download_dataset.py
+
+# Confirm the dataset is tracked in git (exit 0 = tracked)
 git ls-files --error-unmatch cancer-risk-factors.csv
 ```
 
@@ -343,3 +357,23 @@ git ls-files --error-unmatch cancer-risk-factors.csv
 The three standing warnings are the known gaps: `feature_names_in_` is `None`,
 `scaler.pkl` is absent, and the artifacts were pickled under mismatched
 scikit-learn versions.
+
+---
+
+## 10. Issue #13 addendum — obtaining the dataset (runbook, verified)
+
+Verified 2026-09-29 against a fresh `git clone` of this repository:
+
+| Step | What to do | Observed result |
+|---|---|---|
+| 1. Clone | `git clone <repo-url>` | `cancer-risk-factors.csv` present at the repo root |
+| 2. Verify bytes | `Get-FileHash cancer-risk-factors.csv -Algorithm SHA256` | `01291f8b…82a5` — equals the recorded hash |
+| 3. Verify contract | `python verify_dataset.py` | dataset checks PASS (shape, classes, no missing values) |
+| 4. Load a dataframe | `import pandas as pd; df = pd.read_csv('cancer-risk-factors.csv')` | `(2000, 21)` — no hunting for files |
+| 5. Re-fetch fallback | `python download_dataset.py` | SHA-256-gated; refuses to clobber a valid copy |
+
+**Where it used to break:** the notebooks read the Colab-only path
+`/content/cancer-risk-factors.csv`. Since Issue #13 the training notebook reads
+the tracked local file; `train.py`, `app.py`, and every verify script already
+resolved paths relative to the repo root, so a fresh clone reaches a loaded
+dataframe without a single manual step.
