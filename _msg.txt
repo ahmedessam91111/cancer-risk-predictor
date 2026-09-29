@@ -1,0 +1,20 @@
+Track artifacts/production/ so a fresh clone runs the app with no retraining
+
+Closes the last open repo-layout decision. Only the 4-file serving set is
+tracked; the training bundle, metrics.json and manifest.json stay ignored
+(regenerable bit-for-bit by python train.py).
+
+  * .gitignore: artifacts/ -> artifacts/* plus !artifacts/production/. The
+    /* form is required -- git cannot re-include a file whose parent
+    directory is itself excluded. Verified with git check-ignore: the four
+    production files are trackable, the bundle/metrics/manifest still ignored.
+  * README: artifacts/ table row and tree updated, Run locally is now
+    'pip install -r requirements.txt && streamlit run app.py' with
+    --verify-only as the pre-flight check, and a separate Retraining section.
+
+Integrity is machine-checked, not assumed: metadata.json records the sha256 of
+its three siblings, and export_production.py --verify-only re-checks those plus
+the forest/scaler/calibration content fingerprints. .gitattributes already marks
+*.pkl and *.joblib binary, so core.autocrlf=true cannot rewrite these pickles --
+same protection the committed dataset needed. metadata.json is text but nothing
+hashes its own bytes, so a CRLF rewrite of it cannot break the contract.

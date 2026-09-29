@@ -1,0 +1,92 @@
+{
+  "schema": 2,
+  "artifact_set": "production",
+  "model_version": "2.0.0",
+  "trained_at": "2026-09-28T15:37:58.920280+00:00",
+  "exported_at": "2026-09-29T17:48:44Z",
+  "entrypoint": "export_production.py",
+  "input_bundle": {
+    "path": "artifacts/model_bundle.joblib",
+    "sha256": "0e0365981beae9fceebe59ae7392cfa5856191e2f8f4bd7a2799fe750550a7de"
+  },
+  "model_pkl": "sklearn Pipeline [StandardScaler -> CalibratedModel]; scaler embedded; predict() = raw forest argmax (metrics unchanged), predict_proba() = OOF-calibrated probabilities (Issue #11 hybrid)",
+  "target": "Risk_Level",
+  "class_order": [
+    "High",
+    "Low",
+    "Medium"
+  ],
+  "label_mapping": {
+    "High": 0,
+    "Low": 1,
+    "Medium": 2
+  },
+  "resample": "class_weight",
+  "excluded_features": {
+    "Overall_Risk_Score": "target leakage, Issue #5"
+  },
+  "config": {
+    "test_size": 0.2,
+    "random_state": 42,
+    "stratified": true,
+    "n_estimators": 100,
+    "class_weight": "balanced",
+    "max_depth": null,
+    "criterion": "gini",
+    "max_features": "sqrt",
+    "scaler": "StandardScaler(fit on train split only)"
+  },
+  "dataset": {
+    "path": "cancer-risk-factors.csv",
+    "sha256": "01291f8babc1b1e5d8e8af5a4fcfd307b7ea5a2ed5255927c2d0ecc97ccb82a5"
+  },
+  "forest_sha256": "aeca50e59b3dc670177a29e05a0e6c8451f6c0425dc54816c5fa09d6afb6d2f8",
+  "scaler_fingerprint": "72a01b0b93abe5499b6435d9e5fe190601ccc076167e1fda116407bee2bc50ca",
+  "calibration": {
+    "method": "per-class IsotonicRegression(out_of_bounds='clip') (Issue #11 decision A: hybrid)",
+    "fit_on": "5-fold stratified OOF probabilities of the SAME forest (clone, identical hyperparameters, fixed scaler, seed 0) -- training split only",
+    "renormalised": "rows scaled to sum to 1 after per-class transforms",
+    "labels_from": "raw forest argmax (Issue #10 metrics unchanged)",
+    "sha256": "f589f3b8f01a795cf5891d430d4b445253661c530cb475812d66b45f1f62e152"
+  },
+  "environment": {
+    "python": "3.14.7",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "joblib": "1.6.0"
+  },
+  "environment_matches_reference": true,
+  "metrics": {
+    "accuracy": 0.8475,
+    "balanced_accuracy": 0.6274,
+    "high_recall": 0.3,
+    "high_precision": 0.6,
+    "precision_macro": 0.7205,
+    "recall_macro": 0.6274,
+    "f1_macro": 0.6572,
+    "f1_weighted": 0.8409
+  },
+  "files": {
+    "model.pkl": {
+      "sha256": "875e24bafb783034dc12ac0493b255162c29877ab5cf84eb42432ea2416e1add",
+      "bytes": 3771580
+    },
+    "label_encoder.pkl": {
+      "sha256": "c2288fc0d244631bb1e8b126706b2aac52bc48dbae0b9972b5abb8b0ce51e105",
+      "bytes": 495
+    },
+    "feature_names.pkl": {
+      "sha256": "acd88dbed1ec1e4b4c7f79ba7f8f060118cd2bd345280ccc7fa23ccd39925b3c",
+      "bytes": 286
+    }
+  },
+  "calibration_holdout": {
+    "brier_raw": 0.241816,
+    "brier_calibrated": 0.21179833264813644,
+    "ece_macro_raw": 0.09124999999999998,
+    "ece_macro_calibrated": 0.020326992739551505,
+    "labels_bit_identical": true,
+    "max_proba_diff": 0.27538876339742835
+  }
+}
