@@ -357,6 +357,62 @@ Streamlit `AppTest` boot that produced all three risk classes**, and
 
 ---
 
+## Issue #15 — One command that says how good the model is — RESOLVED
+
+**Definition (as filed):** the app ships predictions but states no accuracy.
+Needed one number, produced the same way every time. Measure the committed
+artifact fresh (not the notebook's printed numbers), report per-class P/R/F1 and
+a confusion matrix, decide whether the accuracy is plausible, and say what result
+would make us suspicious rather than pleased.
+
+**Resolution:** `evaluate.py` — loads `artifacts/production/`, recreates the
+400 held-out rows, prints the classification report + confusion matrix, and
+refuses to report if it cannot stand behind the measurement. No retraining, no
+refitting, no threshold changes. Headline numbers recorded in the README.
+
+* **Measured per-class (400 held-out rows, `test_size=0.2`, `random_state=42`,
+  stratified):** High P 0.600 / R 0.300 / F1 0.400 (n=20); Low 0.672 / 0.662 /
+  0.667 (n=65); Medium 0.890 / 0.921 / 0.905 (n=315). Accuracy 0.8475,
+  balanced accuracy 0.6274, macro-F1 0.6572, weighted-F1 0.8409.
+* **Most-confused pair:** Low→Medium (22) and Medium→Low (21) — the two adjacent
+  ordinal classes bleeding into each other, which is the expected shape. But the
+  error that *matters* is **High→Medium: 14 of 20 real High-risk patients are
+  called Medium** (0 High→Low, 0 Low→High, so the ordering is never inverted).
+  The model is never absurd, it is just insensitive where it counts.
+* **Not a leak, and the seed is load-bearing — measured, not asserted.** The
+  decisive finding: re-scoring the *same committed model* on a different
+  `random_state` yields accuracy **0.965–0.975** and High recall **0.85–0.95**,
+  because ~78% of the new "test" rows (312–320 of 400) were already seen while
+  fitting. The true test rows are 0/400 contaminated. So **~0.97 is the number
+  that should make us suspicious** — it is one typo away, and the leaked v1 model
+  reached 0.9975 the same way (Issue #5). `evaluate.py` §7 prints the whole
+  comparison on every run so the trap stays visible.
+* **Is 0.8475 plausible for cancer risk from lifestyle factors? Not on its own.**
+  Medium is 78.75% of the data, so always answering *Medium* scores **0.7875**;
+  the model beats that by only +0.060 accuracy (but by +0.294 balanced accuracy,
+  0.6274 vs 0.3333). So 0.8475 is ~6 points of real signal, not 85. Combined
+  with High recall 0.300, the honest summary is a *useful Medium/Low triage aid
+  with weak High sensitivity* on **synthetic** data that does not encode age or
+  genetics (Age ≈ 0 importance, Issue #12) — not a medical device.
+* **Reproducibility:** byte-identical output across separate processes and across
+  `PYTHONHASHSEED` values; the held-out row set is pinned by fingerprint
+  `8600c6c1d3c44bf4…`.
+* **Guards that were tested by deliberately breaking them** (a preflight that
+  cannot fail proves nothing): tampered CSV → FAIL on dataset sha256; tampered
+  `model.pkl` → FAIL on the artifact sha256; metadata claiming `random_state=7`
+  → FAIL on split-config drift, exit 1 with "refusing to print metrics for a
+  measurement I cannot stand behind". The artifact-sha256 check was **added after
+  testing found a flipped byte in `model.pkl` passed silently with exit 0** — the
+  script was reporting metrics for a model it had not verified.
+* **Self-consistency:** all 8 headline numbers are re-derived and compared to
+  `artifacts/production/metadata.json`; a mismatch fails the run, so the README
+  table cannot go stale unnoticed.
+
+**Evidence:** `evaluate.py`, README "How good is it? One command" section,
+`artifacts/production/metadata.json` (`metrics`), this section.
+
+---
+
 ## Issue #10 — Choose a metric that matches the cost of being wrong — RESOLVED
 
 **Resolution:** primary metric = **High-class recall**, reported with
@@ -385,4 +441,5 @@ evidence script `analyze_error_costs.py`, commit `f2ee071`.
 | 12 | Check what the model is actually keying on | RESOLVED — permutation-importance audit | `docs/ISSUE12_FEATURE_IMPORTANCE.md` |
 | 13 | Anyone who clones this repo can obtain the exact dataset | RESOLVED — committed + upstream-confirmed (CC BY 4.0) | `docs/DATASET_PROVENANCE.md`, `download_dataset.py` |
 | 14 | Make the model contract explicit and enforced | RESOLVED — verified (3 witnesses) + enforced by the app | `docs/MODEL_CONTRACT.md`, `verify_model_contract.py` |
+| 15 | One command that says how good the model is | RESOLVED — `evaluate.py`, contamination guard included | README "How good is it?", `evaluate.py` |
 | — | Repo layout: archive superseded artifacts, track the production set | RESOLVED — archived + `artifacts/production/` tracked | `archive/legacy-pickles-2026-09/README.md`, `docs/ARTIFACT_AUDIT.md` §5 |

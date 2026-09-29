@@ -2,11 +2,88 @@
 
 A 3-class ML web app (Streamlit) that predicts **Cancer Risk Level** — *Low / Medium / High* — from patient lifestyle and genetic factors.
 
+## 📊 How good is it? One command
+
+```bash
+python evaluate.py
+```
+
+Measured on the 400 held-out rows the shipped model was never fitted on
+(`test_size=0.2, random_state=42, stratified` — imported from `train.py`, never
+retyped). Not quoted from the notebook; recomputed from the committed artifacts
+every run.
+
+| Class | Precision | Recall | F1 | Support |
+|-------|----------:|-------:|----:|--------:|
+| **High** | 0.600 | **0.300** | 0.400 | 20 |
+| **Low** | 0.672 | 0.662 | 0.667 | 65 |
+| **Medium** | 0.890 | 0.921 | 0.905 | 315 |
+
+| Metric | Value |
+|--------|------:|
+| Accuracy | 0.8475 |
+| Balanced accuracy | 0.6274 |
+| Macro-F1 | 0.6572 |
+| Weighted-F1 | 0.8409 |
+| **High recall** (primary, Issue #10) | **0.300** |
+| **High precision** (its guardrail) | **0.600** |
+
+Read against a baseline that always answers *Medium*:
+
+| | Accuracy | Balanced accuracy |
+|---|---:|---:|
+| Majority-class baseline | 0.7875 | 0.3333 |
+| **This model** | **0.8475** | **0.6274** |
+| Margin | +0.0600 | +0.2941 |
+
+Confusion matrix (rows = true, cols = predicted):
+
+|  | High | Low | Medium |
+|---|---:|---:|---:|
+| **High** | 6 | 0 | **14** |
+| **Low** | 0 | 43 | **22** |
+| **Medium** | 4 | **21** | 290 |
+
+`evaluate.py` re-derives all eight headline numbers and **fails** if they disagree
+with the values recorded in `artifacts/production/metadata.json`, so the README
+table cannot silently go stale. Re-running is byte-identical (verified across
+processes and `PYTHONHASHSEED` values); the held-out row set is pinned by the
+fingerprint `8600c6c1d3c44bf4…`.
+
+### Does 0.8475 look believable? — honestly, no, on its own
+
+**84.75% accuracy is mostly an artefact of class imbalance, not skill.** Medium is
+78.75% of the data, so a model that answered *Medium* for every single patient
+would already score **0.7875**. The real model beats that constant baseline by
+only ~6 points, and it pays for those points with a dangerous failure mode:
+**it misses 14 of 20 genuinely High-risk patients (recall 0.300)**, calling them
+*Medium*. For a screening tool that is the error that matters, and it is why
+Issue #10 made High recall the primary metric and accuracy context only. Read the
+headline as *balanced accuracy 0.6274*, not 0.8475.
+
+**The single most suspicious number in this project is anything near 0.97.** It
+is trivially reachable here without any real improvement: re-score the same
+committed model on a different random split and accuracy jumps to **0.965–0.975**,
+because ~78% of those new "test" rows were already seen while fitting (measured,
+`evaluate.py` §7). The leaked v1 model scored 0.9975 for the same family of
+reason (Issue #5). So: if a future change reports ~0.97, treat it as a **bug
+report until proven otherwise** — check the split seed before celebrating.
+
+What *is* believable: the model keys on real risk factors in medically sensible
+directions with no dominant feature (Issue #12), the class ordering is
+ordinal-consistent (no Low→High inversion), and the weak-but-nonzero High recall
+is what a genuinely hard, imbalanced 3-class problem looks like — a model that
+found real signal usually looks like this, not like 0.97. The honest summary is a
+*useful Medium/Low triage aid with weak High sensitivity*, on **synthetic data**
+that does not encode age or genetics strongly (Age ≈ 0 importance). Not a medical
+device.
+
 ## 📦 Files
 
 | File | Purpose |
 |------|---------|
 | `app.py` | Streamlit web app (serving entry point) |
+| `evaluate.py` | **One-command evaluation** of the shipped model (Issue #15) — report, confusion matrix, contamination guard |
 | `train.py` | **Training entry point** — `python train.py` |
 | `export_production.py` | Builds the 4-file production artifact set from the verified bundle (calibrated by default) |
 | `calibrated_model.py` | Issue #11 hybrid wrapper: raw-forest labels + calibrated probabilities |
@@ -146,6 +223,7 @@ in [`docs/METRIC_SELECTION.md`](docs/METRIC_SELECTION.md) (Issue #10).
 ## 🔍 Verify the claims
 
 ```bash
+python evaluate.py                  # the headline numbers, re-derived from the artifacts
 python verify_dataset.py            # dataset checksum, schema, leakage pre-checks
 python export_production.py --verify-only   # integrity of the production artifact set
 python verify_app_integration.py    # 27 checks that app.py == production artifacts
