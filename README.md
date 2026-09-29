@@ -94,6 +94,7 @@ device.
 | `download_dataset.py` | Re-fetch + SHA-256-verify the dataset from upstream (Issue #13) |
 | `verify_app_integration.py` | Proves `app.py` uses exactly the production artifacts (27 checks; 25 + 2 skips on a fresh clone) |
 | `audit_overall_risk_score.py` | Target-leakage audit (Issues #5, #6) |
+| `measure_risk_score_leakage.py` | Issue #17: is `Overall_Risk_Score` a legitimate input? Correlation, mutual information, grouped summary, deployed-contract check — read-only |
 | `analyze_error_costs.py` | Cost-aware metric analysis (Issue #10) |
 | `cancer-risk-factors.csv` | Training data, 2000 × 21, checksum-verified |
 | `artifacts/production/` | **The 4-file serving set the app runs from — tracked in git**, so a fresh clone runs the app with no retraining |
@@ -231,6 +232,7 @@ python export_production.py --verify-only   # integrity of the production artifa
 python verify_app_integration.py    # 27 checks that app.py == production artifacts
 python train.py --verify            # re-check a saved bundle's input contract + forest fingerprint
 python audit_overall_risk_score.py  # reproduce the leakage findings
+python measure_risk_score_leakage.py  # Issue #17 verdict figures + deployed-contract check
 python analyze_error_costs.py       # reproduce the Issue #10 metric analysis
 ```
 

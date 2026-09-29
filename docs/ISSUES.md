@@ -475,6 +475,60 @@ Full write-up in `docs/MODEL_PROVENANCE.md`; evidence script
 
 ---
 
+## Issue #17 — Is `Overall_Risk_Score` a legitimate input? — RESOLVED
+
+**Verdict: NO — target leakage.** `Risk_Level` is a deterministic function of
+`Overall_Risk_Score`, and `Overall_Risk_Score` is itself computed from the 17
+legitimate risk factors. It is the *middle* of the chain
+`factors → Overall_Risk_Score → Risk_Level`, handed to a model whose job is to
+reconstruct the last link. Full write-up in `docs/OVERALL_RISK_SCORE_VERDICT.md`;
+evidence script `measure_risk_score_leakage.py`.
+
+* **Computed, not measured.** `float64`, bounded `[0.029285, 0.852158]`, and
+  **2000 distinct values for 2000 rows** — a unit-normalised composite, not an
+  observation. `R² = 0.838764` regressed on the other 17 columns, with nine
+  risk-factor columns carrying near-equal weight (`Family_History` +0.0150 …
+  `Occupational_Hazards` +0.0122) and eight near zero. The unexplained 16% is
+  **independent noise**, not a missed term: its largest |Spearman| against any
+  input is **0.0103**, skew −0.0095, excess kurtosis −0.1111.
+* **Not available at prediction time.** It exists only after the same risk
+  factors have already been combined and thresholded — i.e. after the answer is
+  known. A model that needs it cannot run on a new patient; a model that is
+  handed it is re-reading the label.
+* **Measured relationship.** Spearman `ρ = 0.7129` (capped by the label's 3
+  levels with 1574/2000 rows tied), but **703572/703572 cross-class pairs are
+  ordered correctly (1.000000)** — the ordering is total. Mutual information
+  `0.633875` nats against a label entropy of `0.635146` → **normalised MI
+  0.9980**, i.e. the column removes 99.8% of the label's uncertainty. Its MI
+  exceeds the *sum* of the 17 legitimate features' individual MIs (`0.394426`).
+  Grouped: Low `[0.029285, 0.329922]`, Medium `[0.330033, 0.659130]`, High
+  `[0.660797, 0.852158]` — disjoint, constraining the cuts to `(0.3299, 0.3300)`
+  and `(0.6591, 0.6608)` (i.e. **0.33** and **0.66**). A rule reading only this
+  column is **2000/2000 = 100.00%**, macro-F1 **1.000000**, versus the deployed
+  model's 0.6572.
+* **The notebook saw it and dropped it.** Cell 12 celebrates "only 1 mistake out
+  of 400"; cell 17 is titled **"Removing Overall_Risk_Score and retrying"**; cell
+  18 drops the column; everything after is leak-free. The judgement was right —
+  it just never reached the artifact, because of the save-cell bug of Issue #16.
+* **The deployed model reflects the decision.** Verified mechanically:
+  `artifacts/production/feature_names.pkl` = **17** features, no
+  `Overall_Risk_Score`; `metadata.json` records
+  `excluded_features = {'Overall_Risk_Score': 'target leakage, Issue #5'}`;
+  `app.py` does not ask for it.
+* **The old slider.** The v1 app offered a `0.00–1.00` slider (default `0.5`) in
+  a group titled **"📊 Engineered score"**. Holding all 17 other features at
+  their medians and moving only the slider, the archived v1 model flips class at
+  exactly 0.33 and 0.67: 0.32 → Low, 0.33 → Medium, 0.66 → Medium, 0.67 → High.
+  The user was not describing the patient; they were **selecting the diagnosis**.
+  It was removed in `015368e`, with the reason documented at `app.py:215`, and
+  reintroduction is guarded by the 17-feature contract (`verify_model_contract.py`,
+  Issue #14).
+
+**Evidence:** `measure_risk_score_leakage.py`, `docs/OVERALL_RISK_SCORE_VERDICT.md`,
+`audit_overall_risk_score.py` (Issues #5/#6), this section.
+
+---
+
 ## Issue #10 — Choose a metric that matches the cost of being wrong — RESOLVED
 
 **Resolution:** primary metric = **High-class recall**, reported with
@@ -504,5 +558,6 @@ evidence script `analyze_error_costs.py`, commit `f2ee071`.
 | 13 | Anyone who clones this repo can obtain the exact dataset | RESOLVED — committed + upstream-confirmed (CC BY 4.0) | `docs/DATASET_PROVENANCE.md`, `download_dataset.py` |
 | 14 | Make the model contract explicit and enforced | RESOLVED — verified (3 witnesses) + enforced by the app | `docs/MODEL_CONTRACT.md`, `verify_model_contract.py` |
 | 15 | One command that says how good the model is | RESOLVED — `evaluate.py`, contamination guard included | README "How good is it?", `evaluate.py` |
-| 16 | Which piece of code produced `model_xgb_new.pkl` | RESOLVED — cell 10, `model`; proven by bit-identical refit | `docs/MODEL_PROVENANCE.md`, `trace_model_provenance.py` |
+| 16 | Which piece of code produced `model_xgb_new.pkl` | RESOLVED - cell 10, `model`; proven by bit-identical refit | `docs/MODEL_PROVENANCE.md`, `trace_model_provenance.py` |
+| 17 | Is `Overall_Risk_Score` a legitimate input | RESOLVED - NO, target leakage; deployed model excludes it | `docs/OVERALL_RISK_SCORE_VERDICT.md`, `measure_risk_score_leakage.py` |
 | — | Repo layout: archive superseded artifacts, track the production set | RESOLVED — archived + `artifacts/production/` tracked | `archive/legacy-pickles-2026-09/README.md`, `docs/ARTIFACT_AUDIT.md` §5 |
