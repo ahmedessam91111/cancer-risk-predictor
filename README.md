@@ -8,7 +8,9 @@ A 3-class ML web app (Streamlit) that predicts **Cancer Risk Level** — *Low / 
 |------|---------|
 | `app.py` | Streamlit web app (serving entry point) |
 | `train.py` | **Training entry point** — `python train.py` |
-| `export_production.py` | Builds the 4-file production artifact set from the verified bundle |
+| `export_production.py` | Builds the 4-file production artifact set from the verified bundle (calibrated by default) |
+| `calibrated_model.py` | Issue #11 hybrid wrapper: raw-forest labels + calibrated probabilities |
+| `analyze_probability_calibration.py` | Issue #11 calibration analysis (Brier, ECE, reliability) — read-only |
 | `verify_dataset.py` | Dataset integrity + provenance checks |
 | `verify_app_integration.py` | Proves `app.py` uses exactly the production artifacts (27 checks) |
 | `audit_overall_risk_score.py` | Target-leakage audit (Issues #5, #6) |
@@ -26,10 +28,10 @@ artifacts/
 ├── metrics.json         # held-out metrics, CV, per-class report, importances
 ├── manifest.json        # environment versions + artifact checksums
 └── production/          # THE set the app runs from — no retraining needed
-    ├── model.pkl            # Pipeline [StandardScaler -> RandomForest]
+    ├── model.pkl            # Pipeline [StandardScaler -> CalibratedModel]
     ├── label_encoder.pkl    # High / Low / Medium encoder
     ├── feature_names.pkl    # 17 leak-free features, pipeline order
-    └── metadata.json        # version, config, metrics, fingerprints
+    └── metadata.json        # version, config, metrics, fingerprints, calibration
 ```
 
 The deprecated `model_xgb_new.pkl`, `label_encoder.pkl` and
@@ -50,6 +52,15 @@ The app will not start until the production artifacts exist — it loads exactly
 and tells you so if they are missing. `export_production.py` re-exports them
 from the bundle without retraining; `python train.py` is only needed when you
 actually want to retrain.
+
+**Calibrated probabilities (Issue #11, hybrid):** by default the exported
+`model.pkl` wraps the forest in a `CalibratedModel` — `predict()` returns the
+raw forest's class label (all published metrics stay valid), while
+`predict_proba()` returns probabilities recalibrated out-of-fold (Brier
+0.2418 → 0.2118, ECE macro 0.0912 → 0.0203 on the held-out set). Pass
+`--no-calibrate` to export the plain uncalibrated pipeline, or
+`--verify-only` to probe the existing production set (incl. the calibration
+fingerprint).
 
 ## 🎯 Features
 

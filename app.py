@@ -161,6 +161,9 @@ def render_probabilities(probs):
             f'<span style="color:{color};">({pct*100:.1f}%)</span></div>',
             unsafe_allow_html=True)
         st.progress(pct)
+    st.caption("Percentages are calibrated probabilities (out-of-fold "
+               "recalibration, Issue #11). The predicted class comes from the "
+               "uncalibrated risk model, so all published metrics remain valid.")
 
 # ---------------- شريط اختيار الوضع ----------------
 mode = st.radio("Prediction mode", ["📁 Batch upload (CSV)", "🧑 Manual input"], horizontal=True)
