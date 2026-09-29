@@ -14,7 +14,7 @@ A 3-class ML web app (Streamlit) that predicts **Cancer Risk Level** — *Low / 
 | `analyze_feature_importance.py` | Issue #12 permutation-importance audit (plot → `docs/figures/`) — read-only |
 | `verify_dataset.py` | Dataset integrity + provenance checks |
 | `download_dataset.py` | Re-fetch + SHA-256-verify the dataset from upstream (Issue #13) |
-| `verify_app_integration.py` | Proves `app.py` uses exactly the production artifacts (27 checks) |
+| `verify_app_integration.py` | Proves `app.py` uses exactly the production artifacts (27 checks; 25 + 2 skips on a fresh clone) |
 | `audit_overall_risk_score.py` | Target-leakage audit (Issues #5, #6) |
 | `analyze_error_costs.py` | Cost-aware metric analysis (Issue #10) |
 | `cancer-risk-factors.csv` | Training data, 2000 × 21, checksum-verified |
@@ -147,11 +147,19 @@ in [`docs/METRIC_SELECTION.md`](docs/METRIC_SELECTION.md) (Issue #10).
 
 ```bash
 python verify_dataset.py            # dataset checksum, schema, leakage pre-checks
-python train.py --verify            # re-check a saved bundle's input contract + forest fingerprint
 python export_production.py --verify-only   # integrity of the production artifact set
 python verify_app_integration.py    # 27 checks that app.py == production artifacts
+python train.py --verify            # re-check a saved bundle's input contract + forest fingerprint
 python audit_overall_risk_score.py  # reproduce the leakage findings
 python analyze_error_costs.py       # reproduce the Issue #10 metric analysis
 ```
+
+The first three work on a **fresh clone with no training** — that is the point of
+committing `artifacts/production/`. On a clone, `verify_app_integration.py`
+reports **25 passed, 2 skipped** (exit 0): the two skips only compare the
+production set against `artifacts/model_bundle.joblib`, which is not committed.
+After `python train.py` the same command reports **27/27**, with the bundle
+acting as an independent second witness. The script never reports a pass it did
+not earn, and never fails for a file the project chose not to track.
 
 > ⚠️ For research/education only — **not** a medical diagnosis tool. The dataset is synthetic.

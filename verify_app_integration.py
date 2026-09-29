@@ -13,9 +13,17 @@ artifacts". This script checks that in five layers:
                    execute it on hostile input (scrambled columns, decoys);
                    the raw matrix it returns must match the training reference.
   3. END TO END -- score the 400 held-out rows through the production pipeline
-                   and require bit-identical predictions to train.py's bundle.
+                   and, when train.py's bundle is present, require bit-identical
+                   predictions to it.
   4. PURITY     -- leak-free feature set; no train/test row overlap.
   5. LIVE       -- boot the real app via Streamlit's AppTest and click through.
+
+Only 2 of the checks need `artifacts/model_bundle.joblib`, which is deliberately
+NOT committed (it is a version-bound pickle; `python train.py` rebuilds it). On a
+fresh clone those 2 are reported as SKIP with the reason, and the script says so
+in its summary rather than claiming a pass it did not earn -- or failing for a
+file the project chose not to track. Every other check runs from the committed
+production set alone.
 
 Run:  python verify_app_integration.py
 """
@@ -45,6 +53,7 @@ BUNDLE_PATH = BASE_DIR / "artifacts" / "model_bundle.joblib"
 DATA_PATH = BASE_DIR / "cancer-risk-factors.csv"
 
 failures: list[str] = []
+skipped: list[str] = []
 checks = 0
 
 
@@ -55,6 +64,14 @@ def check(ok: bool, label: str, detail: str = "") -> bool:
     if not ok:
         failures.append(label)
     return ok
+
+
+def skip(label: str, reason: str) -> None:
+    """Record a check that could not run here, and why. Never counted as a pass."""
+    global checks
+    checks += 1
+    skipped.append(label)
+    print(f"[skip]   {label} — {reason}")
 
 
 def load_app_function(name: str, namespace: dict) -> object:
@@ -93,9 +110,12 @@ def main() -> int:
         print(f"[FAIL] missing production artifacts: {[p.name for p in missing]}")
         print("       run `python export_production.py` first")
         return 1
-    if not BUNDLE_PATH.exists():
-        print(f"[FAIL] {BUNDLE_PATH} missing — run `python train.py` first")
-        return 1
+    have_bundle = BUNDLE_PATH.exists()
+    if not have_bundle:
+        print(f"[note]  {BUNDLE_PATH.name} absent (not committed by design).")
+        print("        2 cross-checks that compare against train.py's bundle will be")
+        print("        reported as [skip]. Everything else is proven from the committed")
+        print("        production set alone. Run `python train.py` to enable them.")
     if not APP_PATH.exists():
         print(f"[FAIL] {APP_PATH} missing")
         return 1
@@ -192,12 +212,16 @@ def main() -> int:
           f"{int(pd.Series(pred_prod).eq('High').sum())} High")
 
     # Bitwise: the production pipeline (scaler embedded) vs train.py's bundle path.
-    bundle = joblib.load(BUNDLE_PATH)
-    pred_bundle = le.inverse_transform(
-        bundle["model"].predict(bundle["scaler"].transform(X_te_app)))
-    check(np.array_equal(pred_prod, pred_bundle),
-          "production pipeline predictions are bit-identical to train.py's bundle path",
-          f"{dict(pd.Series(pred_prod).value_counts())}")
+    bundle = joblib.load(BUNDLE_PATH) if have_bundle else None
+    if bundle is None:
+        skip("production pipeline predictions are bit-identical to train.py's bundle path",
+             "artifacts/model_bundle.joblib absent — run `python train.py` to enable")
+    else:
+        pred_bundle = le.inverse_transform(
+            bundle["model"].predict(bundle["scaler"].transform(X_te_app)))
+        check(np.array_equal(pred_prod, pred_bundle),
+              "production pipeline predictions are bit-identical to train.py's bundle path",
+              f"{dict(pd.Series(pred_prod).value_counts())}")
 
     # The scaler is load-bearing: feeding the bare forest raw values must NOT
     # give the same answer (this is the pre-Issue-#8 collapse).
@@ -220,8 +244,13 @@ def main() -> int:
     print("=" * 78)
     check(X_tr.index.intersection(X_te.index).empty,
           "no row overlap between train and test")
-    check(set(feats) == set(bundle["feature_names"]),
-          "feature set is the leak-free 17", f"{len(feats)} features")
+    if bundle is None:
+        skip("feature set matches train.py's bundle feature list",
+             "artifacts/model_bundle.joblib absent — cross-checked against "
+             "production feature_names.pkl and MODEL_CONTRACT.md instead")
+    else:
+        check(set(feats) == set(bundle["feature_names"]),
+              "feature set is the leak-free 17", f"{len(feats)} features")
 
     print("\n" + "=" * 78)
     print("5. LIVE STREAMLIT -- the real app, driven headlessly end to end")
@@ -230,10 +259,21 @@ def main() -> int:
 
     print(f"\n{'=' * 78}")
     if failures:
-        print(f"FAIL: {checks - len(failures)}/{checks} checks passed")
+        print(f"FAIL: {checks - len(failures) - len(skipped)}/{checks} checks passed")
         for f in failures:
-            print(f"  - {f}")
+            print(f"  FAIL  {f}")
+        for s in skipped:
+            print(f"  skip  {s}")
         return 1
+    passed = checks - len(skipped)
+    if skipped:
+        print(f"PASS: {passed}/{checks} checks passed, {len(skipped)} skipped "
+              f"(need `python train.py` to enable):")
+        for s in skipped:
+            print(f"  skip  {s}")
+        print("The app is still fully proven from the committed production set; the "
+              "skipped\nchecks only compare it against a bundle that is not committed.")
+        return 0
     print(f"PASS: all {checks} checks passed")
     return 0
 

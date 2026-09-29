@@ -375,39 +375,69 @@ def verify_only(out_dir: Path = PROD_DIR) -> int:
         else:
             print("[warn] manifest has no production metadata.json checksum; re-run export_production.py")
             ok = False
+    else:
+        # Nothing hashes metadata.json's own bytes inside the production set (it
+        # cannot hash itself), so a fresh clone has no such witness. That is
+        # expected, not a defect -- say so rather than passing in silence.
+        print("[note] manifest.json absent (not committed) -- metadata.json's own "
+              "bytes have\n       no checksum witness here; its three sibling hashes "
+              "are verified above.")
     # Content identity is verified on ARRAY bytes (process-stable), because
     # pickle file bytes drift across processes with PYTHONHASHSEED. The file
     # sha256 checks above prove files are unchanged since this export; these
     # checks prove the CONTENT is the canonical model.
+    #
+    # Everything here is derived from model.pkl itself -- the fitted StandardScaler
+    # is EMBEDDED as pipeline step 0, so the scaler fingerprint is reproducible
+    # without train.py's bundle. That matters because artifacts/ is gitignored
+    # except artifacts/production/: a fresh clone must still be able to verify
+    # the model it was handed, end to end. The bundle, when present, is used only
+    # as an independent second witness of the same scaler.
+    md_content = json.loads(METADATA_JSON.read_text(encoding="utf-8"))
+    prod_model = joblib.load(MODEL_PKL)
+    forest = _final_estimator(prod_model)
+
+    f_now, f_rec = forest_sha256(forest), md_content.get("forest_sha256")
+    state = "ok" if f_now == f_rec else "FAIL"
+    print(f"[{state}] forest content fingerprint matches metadata "
+          f"({f_now[:16]}...)")
+    ok = ok and (f_now == f_rec)
+
+    scaler = prod_model.steps[0][1]
+    s_now = scaler_sha256(scaler)
+    s_rec = md_content.get("scaler_fingerprint")
+    state = "ok" if s_now == s_rec else "FAIL"
+    print(f"[{state}] embedded scaler fingerprint matches metadata "
+          f"({s_now[:16]}...)")
+    ok = ok and (s_now == s_rec)
+
+    cal_rec = md_content.get("calibration") or {}
+    cal_sha = cal_rec.get("sha256")
+    if cal_sha:
+        if hasattr(forest, "calibrators"):
+            cal_now = calibration_sha256(forest.calibrators)
+            state = "ok" if cal_now == cal_sha else "FAIL"
+            print(f"[{state}] calibrated-probabilities fingerprint matches "
+                  f"metadata (calibration {cal_now[:16]}...)")
+            ok = ok and (cal_now == cal_sha)
+        else:
+            print("[FAIL] model.pkl is not the calibrated hybrid but "
+                  "metadata declares calibration")
+            ok = False
+
     bundle_path = OUT_DIR / "model_bundle.joblib"
     if bundle_path.exists():
         bundle = joblib.load(bundle_path)
-        md_content = json.loads(METADATA_JSON.read_text(encoding="utf-8"))
-        prod_model = joblib.load(MODEL_PKL)
-        forest = _final_estimator(prod_model)
-        f_now, f_rec = forest_sha256(forest), md_content.get("forest_sha256")
-        s_now = scaler_sha256(bundle["scaler"])
-        s_rec = md_content.get("scaler_fingerprint")
-        state = "ok" if f_now == f_rec and s_now == s_rec else "FAIL"
-        print(f"[{state}] model content fingerprint matches the bundle "
-              f"(forest {f_now[:16]}..., scaler {s_now[:16]}...)")
-        ok = ok and (f_now == f_rec) and (s_now == s_rec)
-        cal_rec = md_content.get("calibration") or {}
-        cal_sha = cal_rec.get("sha256")
-        if cal_sha:
-            wrapped = _final_estimator(prod_model)
-            if hasattr(wrapped, "calibrators"):
-                cal_now = calibration_sha256(wrapped.calibrators)
-                state = "ok" if cal_now == cal_sha else "FAIL"
-                print(f"[{state}] calibrated-probabilities fingerprint matches "
-                      f"metadata (calibration {cal_now[:16]}...)")
-                ok = ok and (cal_now == cal_sha)
-            else:
-                print("[FAIL] model.pkl is not the calibrated hybrid but "
-                      "metadata declares calibration")
-                ok = False
+        s_bundle = scaler_sha256(bundle["scaler"])
+        state = "ok" if s_bundle == s_now else "FAIL"
+        print(f"[{state}] cross-witness: bundle scaler == embedded scaler "
+              f"({s_bundle[:16]}...)")
+        ok = ok and (s_bundle == s_now)
     else:
-        print("[warn] cannot check content fingerprints: bundle missing")
+        print("[note] model_bundle.joblib absent (not committed by design) -- "
+              "content fingerprints\n       above were verified from the committed "
+              "production set alone; run `python train.py`\n       to add the bundle as "
+              "an independent second witness.")
     return 0 if ok else 1
 
 

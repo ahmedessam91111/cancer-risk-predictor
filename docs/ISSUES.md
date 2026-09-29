@@ -286,6 +286,77 @@ not encode age/genetics strongly.
 
 ---
 
+## Issue #14 — Make the model contract explicit and enforced — RESOLVED
+
+**Resolution (documentation + assertions; no model change).** Full contract in
+`docs/MODEL_CONTRACT.md`; assertion script `verify_model_contract.py`
+(PASS — 14 checks pass of 15, 1 expected WARN, exit 0), commit `6e9894c`.
+
+* **The contract:** 17 features in one canonical order, each with its documented
+  value range; `Overall_Risk_Score` excluded as leakage (#5).
+* **Three agreeing witnesses,** so the order is *verified*, not assumed:
+  `feature_names.pkl` (sha256 `acd88dbe…`, matching `metadata.files`),
+  `bundle["feature_names"]`, and `pipeline.feature_names_in_`. The pipeline and
+  scaler `feature_names_in_` agree; the forest's is `None` **by construction** —
+  it is fit on a numpy array — which is expected, not a defect.
+* **Enforced, not just documented:** `app.py` reorders the incoming frame to
+  `FEATURE_NAMES` before predicting. Proven adversarially — a permuted CSV
+  *without* the app's reorder flips ~9% of labels; *with* it, predictions are
+  bit-identical; a wrong-order DataFrame raises inside the pipeline.
+
+**Evidence:** `docs/MODEL_CONTRACT.md`, `verify_model_contract.py`, this section.
+
+---
+
+## Repo layout — archive the superseded artifacts, track the production set — RESOLVED
+
+The two decisions left open at the end of the tier, resolved by the user.
+
+* **Legacy `v1` pickles archived, not deleted** (commit `869f213`), exactly the
+  option `docs/ARTIFACT_AUDIT.md` §5 prescribed: `model_xgb_new.pkl`,
+  `label_encoder.pkl` and `feature_names.pkl` were `git mv`-ed to
+  `archive/legacy-pickles-2026-09/` with a README recording what each is, why it
+  was superseded, and its sha256. The three evidence scripts that read them
+  (`verify_dataset.py`, `audit_overall_risk_score.py`, `analyze_error_costs.py`)
+  were repointed at the archive path and re-verified. The serving path never
+  read them.
+* **`artifacts/production/` is now tracked** (commit `5beece5`) so a fresh clone
+  runs the app with **no retraining**. The training bundle, `metrics.json` and
+  `manifest.json` stay ignored — they are version-bound pickles / regenerable
+  outputs, and `python train.py` rebuilds them bit-for-bit. `.gitignore` needed
+  `artifacts/*` + `!artifacts/production/` because git cannot re-include a file
+  whose parent directory is itself excluded.
+* **Binary safety:** `.gitattributes` already marks `*.pkl` / `*.joblib`
+  `binary`, so the `core.autocrlf=true` CRLF rewrite cannot touch them — the same
+  protection the committed dataset needed. Confirmed empirically: a real clone
+  reproduced all three sha256 values byte-exactly.
+
+**Two verifier findings that came out of the clone test** (both fixed, both
+honest-reporting bugs rather than model issues):
+
+1. `verify_app_integration.py` **hard-failed on a fresh clone** because it gated
+   all 27 checks on the (uncommitted) bundle, though only 2 checks use it. It now
+   reports those 2 as explicit `[skip]` lines with the reason and exits 0 —
+   `PASS: 25/27 checks passed, 2 skipped`. It never claims a pass it did not
+   earn, and never fails for a file the project chose not to track.
+2. `export_production.py --verify-only` **silently degraded to `[warn] cannot
+   check content fingerprints: bundle missing`**. The bundle was never actually
+   required: the fitted `StandardScaler` is embedded as pipeline step 0, so the
+   scaler fingerprint is reproducible from `model.pkl` alone (verified — it
+   reproduces `72a01b0b…` exactly). The fingerprints are now derived from
+   `model.pkl`, and the bundle, when present, is an *independent second witness*.
+   A fresh clone now verifies **all three** content fingerprints, which is
+   strictly stronger than before; `manifest.json`'s absence is reported as a
+   `[note]` instead of passing in silence.
+
+**Fresh-clone proof:** cloned to a clean directory, then `export_production.py
+--verify-only` exit 0 (all three content fingerprints + the three file sha256s),
+`verify_app_integration.py` exit 0 (25 passed / 2 skipped) **including the live
+Streamlit `AppTest` boot that produced all three risk classes**, and
+`artifacts/model_bundle.joblib` absent — i.e. the app runs with no training.
+
+---
+
 ## Issue #10 — Choose a metric that matches the cost of being wrong — RESOLVED
 
 **Resolution:** primary metric = **High-class recall**, reported with
@@ -313,3 +384,5 @@ evidence script `analyze_error_costs.py`, commit `f2ee071`.
 | 11 | Check whether the displayed probabilities are real | RESOLVED — hybrid calibration shipped | this file |
 | 12 | Check what the model is actually keying on | RESOLVED — permutation-importance audit | `docs/ISSUE12_FEATURE_IMPORTANCE.md` |
 | 13 | Anyone who clones this repo can obtain the exact dataset | RESOLVED — committed + upstream-confirmed (CC BY 4.0) | `docs/DATASET_PROVENANCE.md`, `download_dataset.py` |
+| 14 | Make the model contract explicit and enforced | RESOLVED — verified (3 witnesses) + enforced by the app | `docs/MODEL_CONTRACT.md`, `verify_model_contract.py` |
+| — | Repo layout: archive superseded artifacts, track the production set | RESOLVED — archived + `artifacts/production/` tracked | `archive/legacy-pickles-2026-09/README.md`, `docs/ARTIFACT_AUDIT.md` §5 |
