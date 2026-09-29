@@ -162,10 +162,10 @@ That is the single most important improvement in this retrain, and it came from
 | Reports unknown extra CSV columns instead of silently dropping them | contract transparency |
 | Sidebar model card: version, estimator, held-out metrics, and why the old score was higher | **Issue #8 step 9** |
 
-`model_xgb_new.pkl`, `label_encoder.pkl`, and `feature_names.pkl` are **left on
-disk, untouched, no longer read by anything.** They remain in git for
-provenance. Removing them is a separate decision — see the open questions at
-the end.
+`model_xgb_new.pkl`, `label_encoder.pkl`, and `feature_names.pkl` were **left
+on disk, untouched, no longer read by anything.** They remain in git for
+provenance — now under `archive/legacy-pickles-2026-09/` (moved with `git mv`
+after full verification, with a README; see `docs/ARTIFACT_AUDIT.md` §5).
 
 ## 2.6 Before / after, end to end
 

@@ -37,7 +37,9 @@ from sklearn.preprocessing import LabelEncoder
 BASE_DIR = Path(__file__).resolve().parent
 BUNDLE_PATH = BASE_DIR / "artifacts" / "model_bundle.joblib"
 DATA_PATH = BASE_DIR / "cancer-risk-factors.csv"
-LEGACY_MODEL = BASE_DIR / "model_xgb_new.pkl"
+# Archived legacy artifact (v1, superseded) -- loaded only to document the
+# old 18-feature model. See archive/legacy-pickles-2026-09/.
+LEGACY_MODEL = BASE_DIR / "archive" / "legacy-pickles-2026-09" / "model_xgb_new.pkl"
 
 # Class order. Index 0 is the most dangerous, so ordinal distance is meaningful.
 CLASSES = ["High", "Low", "Medium"]

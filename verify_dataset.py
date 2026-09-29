@@ -61,9 +61,12 @@ EXPECTED_FEATURE_ORDER = [
     "Overall_Risk_Score", "BMI", "Physical_Activity_Level",
 ]
 
-MODEL_FILE = "model_xgb_new.pkl"
-ENCODER_FILE = "label_encoder.pkl"
-FEATURES_FILE = "feature_names.pkl"
+# The three original v1 artifacts, archived (Issue #2/#4/#5/#8): they were the
+# untuned, leaky, hand-built predecessors. Kept as evidence, read by this
+# verifier only; the app never touches them. See archive/legacy-pickles-2026-09/.
+MODEL_FILE = "archive/legacy-pickles-2026-09/model_xgb_new.pkl"
+ENCODER_FILE = "archive/legacy-pickles-2026-09/label_encoder.pkl"
+FEATURES_FILE = "archive/legacy-pickles-2026-09/feature_names.pkl"
 # The fitted StandardScaler is NOT part of the artifact set -- a known gap.
 SCALER_FILE = "scaler.pkl"
 

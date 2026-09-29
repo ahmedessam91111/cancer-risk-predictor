@@ -12,9 +12,9 @@ Reviewed: 2026-09-28
 
 | path | bytes | produced by | app uses it? | status |
 |------|------:|-------------|:---:|--------|
-| `model_xgb_new.pkl` (repo root) | 1.16 MB | notebook cell: `joblib.dump(model,'model_xgb_new.pkl')` | **no** | **superseded** |
-| `label_encoder.pkl` (repo root) | 399 B | hand-built (no notebook trace found) | **no** | **superseded** |
-| `feature_names.pkl` (repo root) | 307 B | hand-written list (no notebook trace found) | **no** | **superseded** |
+| `model_xgb_new.pkl` (now `archive/legacy-pickles-2026-09/`) | 1.16 MB | notebook cell: `joblib.dump(model,'model_xgb_new.pkl')` | **no** | **superseded → archived** |
+| `label_encoder.pkl` (now `archive/legacy-pickles-2026-09/`) | 399 B | hand-built (no notebook trace found) | **no** | **superseded → archived** |
+| `feature_names.pkl` (now `archive/legacy-pickles-2026-09/`) | 307 B | hand-written list (no notebook trace found) | **no** | **superseded → archived** |
 | `artifacts/model_bundle.joblib` | 3.77 MB | `python train.py` (traces notebook cells 2/4/8/9/10 → save cell 50) | **no** (replaced below) | **intermediate** |
 | `artifacts/production/{model,label_encoder,feature_names,metadata}.{pkl,json}` | ~3.8 MB total | `python export_production.py` | **yes** | **production** |
 | `cancer-risk-predictor/` (nested) | — | stale local clone at commit `9a66cdd` | no | untracked, gitignored |
@@ -36,7 +36,10 @@ Tier 2/3 and no code reads them):
 * **`feature_names.pkl`** — a hand-written list of **18** names; the clean 17
   match the current feature set but the list also contains `Overall_Risk_Score`.
 
-All three are git-tracked and deliberately **kept as evidence**, not deleted.
+All three are git-tracked and were deliberately **kept as evidence, not
+deleted**. In September 2026 (after every verification layer passed) they were
+`git mv`-ed to **`archive/legacy-pickles-2026-09/`** with a README explaining
+each one; the repository root now carries only the live contract.
 
 ## 3. Why the production layout looks the way it does
 
@@ -93,14 +96,19 @@ canonical bundle's content), so either direction of drift is caught.
 Per the project rule, nothing is deleted while the tier is unverified, and
 nothing is ever deleted silently.
 
-1. Keep `model_xgb_new.pkl`, `label_encoder.pkl`, `feature_names.pkl` in place
-   as evidence while all verification layers pass (they currently do: 27/27
-   checks; app runs from the production set without retraining).
+1. Keep `model_xgb_new.pkl`, `label_encoder.pkl`, `feature_names.pkl` as evidence
+   while all verification layers pass (they do: 27/27 app-integration checks,
+   model-contract PASS, dataset verified; app runs from the production set
+   without retraining).
 2. After the full tier (including issues #10–#13) is verified, the options are:
    * **archive**: move under `archive/legacy-pickles-2026-09/` with a
      `README.md` documenting why each was superseded (keeps the audit trail in
      git), or
    * **delete**: `git rm` the three files in a documented commit.
+   → **Done: archived** (2026-09, `git mv`, README included). The three
+   evidence scripts (`verify_dataset.py`, `audit_overall_risk_score.py`,
+   `analyze_error_costs.py`) were repointed at the archive path; the serving
+   path never reads them.
 3. The nested `cancer-risk-predictor/` clone is a stale, untracked workspace,
    not project data; it is gitignored and can be deleted locally at any time
    without touching the repository.

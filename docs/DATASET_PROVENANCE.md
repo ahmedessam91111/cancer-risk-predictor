@@ -154,7 +154,8 @@ still consumes the leaked feature.**
 ### ⚠ The scaler is not part of the artifact set
 
 Step 5 exists in training but no `scaler.pkl` was ever written. Only three
-artifacts exist: `model_xgb_new.pkl`, `label_encoder.pkl`, `feature_names.pkl`.
+artifacts exist: `model_xgb_new.pkl`, `label_encoder.pkl`, `feature_names.pkl`
+(all three now under `archive/legacy-pickles-2026-09/`).
 `app.py` therefore feeds **raw** values to a model fit on **standardized**
 values. Measured on the 400 held-out rows:
 

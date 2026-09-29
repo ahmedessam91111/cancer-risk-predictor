@@ -36,9 +36,12 @@ artifacts/
     └── metadata.json        # version, config, metrics, fingerprints, calibration
 ```
 
-The deprecated `model_xgb_new.pkl`, `label_encoder.pkl` and
-`feature_names.pkl` at the repo root are kept as evidence and are **not** read
-by the app. See [`docs/ARTIFACT_AUDIT.md`](docs/ARTIFACT_AUDIT.md).
+The original `model_xgb_new.pkl`, `label_encoder.pkl` and `feature_names.pkl` are
+**superseded and archived** under `archive/legacy-pickles-2026-09/` (with a
+README); nothing in the serving path reads them. The deprecated
+`model_xgb_new.pkl`, `label_encoder.pkl` and `feature_names.pkl` that used to sit
+at the repo root are kept as evidence in that archive and are **not** read by the
+app. See [`docs/ARTIFACT_AUDIT.md`](docs/ARTIFACT_AUDIT.md).
 
 ## 📦 Dataset
 

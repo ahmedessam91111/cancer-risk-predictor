@@ -42,8 +42,11 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA = BASE_DIR / "cancer-risk-factors.csv"
-FEATURES_PKL = BASE_DIR / "feature_names.pkl"
-MODEL_PKL = BASE_DIR / "model_xgb_new.pkl"
+# Archived legacy artifacts (v1, superseded). Read here as EVIDENCE only; the
+# shipped app runs from artifacts/production/. See archive/legacy-pickles-2026-09/.
+ARCHIVE_DIR = BASE_DIR / "archive" / "legacy-pickles-2026-09"
+FEATURES_PKL = ARCHIVE_DIR / "feature_names.pkl"
+MODEL_PKL = ARCHIVE_DIR / "model_xgb_new.pkl"
 
 # The leaked feature under audit.
 LEAKY = "Overall_Risk_Score"
