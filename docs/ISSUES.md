@@ -413,6 +413,68 @@ refitting, no threshold changes. Headline numbers recorded in the README.
 
 ---
 
+## Issue #16 — Which code produced `model_xgb_new.pkl`? — RESOLVED
+
+**Answer: notebook cell index 10 (`execution_count=55`), variable `model` — the
+first, untuned RandomForest in the notebook.** Not XGBoost, not a tuned model,
+not the last thing that ran. Written to disk by cell index 50
+(`execution_count=102`), the only cell in the notebook that writes any file.
+Full write-up in `docs/MODEL_PROVENANCE.md`; evidence script
+`trace_model_provenance.py` (exit 0 = positively identified).
+
+* **Type vs filename:** `sklearn.ensemble._forest.RandomForestClassifier`, not
+  XGBoost — `"XGB" in type(model).__name__` is `False`. `repr(model)` is the bare
+  `RandomForestClassifier(random_state=42)`, and since scikit-learn prints only
+  *non-default* params, that proves **every other hyperparameter is at its
+  default** — the model was never tuned. The pickle was written by scikit-learn
+  **1.6.1** (vs 1.9.1 now).
+* **Hyperparameters, one by one:** 13 notebook cells construct estimators (25
+  call sites, 7 of them `RandomForest`). Only cell 10 matches on all 19 params.
+  Nearest rival is cell 21, whose constructor is *byte-identical* — which is why
+  the input shape had to be checked too. Cells 35/38/41/42 are tuned
+  (`max_depth=19`, `n_estimators=347`, …) and cannot match; cells 14/44/45/46/47
+  are the wrong type entirely.
+* **Input shape:** `n_features_in_ = 18`, which is the **cell 4** schema
+  (`drop(['Risk_Level','Patient_ID','Cancer_Type'])` — `Overall_Risk_Score`
+  retained), not cell 18's clean 17. Confirmed twice over: the model *raises* on
+  17 columns, and `Overall_Risk_Score` holds **70.3%** of all importance with a
+  top1/#2 ratio of **17.8×** (the shipped clean model: 1.05–1.42×).
+* **Positive identification, not just elimination:** re-running notebook cells
+  4 → 8 → 9 → 10 verbatim reproduces the artifact's `feature_importances_` to
+  **0.000e+00**, gives **identical predictions on all 400 test rows**, and yields
+  the same confusion matrix `[[19,0,1],[0,65,0],[0,0,315]]` that cell 11 itself
+  printed — from a different interpreter and a different scikit-learn version.
+* **The mechanism.** `model` is assigned in three cells, but only **cell 10 is at
+  module scope**. Cells 35 and 47 assign `model` *inside* `def objective(trial):`,
+  i.e. a **function-local** name the global can never see. So the Optuna tuning —
+  including the XGBoost work the filename advertises, which was the notebook's
+  last modelling at `exec 100` — never touched the global. When cell 50 ran
+  `joblib.dump(model, 'model_xgb_new.pkl')` at `exec 102`, it serialised the
+  `exec 55` forest. The save cell does **0 `.fit()` and 0 `.transform()` calls**
+  and prints an unconditional "Model saved successfully", so the mismatch was
+  invisible. Four compounding mistakes: a reused variable name, tuning hidden in
+  a closure, a save cell that trusted the name, and a success message that
+  cannot fail.
+* **Not the best model, on either reading.** On the notebook's own leaderboard it
+  *scored* highest (0.9975) — but that ranking is itself the leak, and the clean
+  models were never comparable since this artifact cannot accept their 17-column
+  input at all. Among leak-free models it is beaten by the tuned **SMOTE + XGBoost
+  pipeline of cell 44 (accuracy 0.85, macro-F1 0.68)** and by cell 29 (0.84/0.64)
+  and cell 42 (0.83/0.65). **None of the tuned models was ever saved.**
+* **Not the intended deploy target.** Three signals say the intent was the
+  XGBoost work and none of it reached the file: the filename says `xgb`; the save
+  ran 2 execution steps after the XGB tuning, so someone meant to save *that*;
+  and the `_new` suffix reads as "the improved one" when it is in fact the
+  **oldest** model in the notebook.
+* **The 0.9975 = 399/400**, rounded to `accuracy 1.00` in cell 11's report — the
+  figure the project was long described by, and the number Issue #15 replaces
+  with a real 0.8475.
+
+**Evidence:** `trace_model_provenance.py`, `docs/MODEL_PROVENANCE.md`,
+`archive/legacy-pickles-2026-09/README.md`, this section.
+
+---
+
 ## Issue #10 — Choose a metric that matches the cost of being wrong — RESOLVED
 
 **Resolution:** primary metric = **High-class recall**, reported with
@@ -442,4 +504,5 @@ evidence script `analyze_error_costs.py`, commit `f2ee071`.
 | 13 | Anyone who clones this repo can obtain the exact dataset | RESOLVED — committed + upstream-confirmed (CC BY 4.0) | `docs/DATASET_PROVENANCE.md`, `download_dataset.py` |
 | 14 | Make the model contract explicit and enforced | RESOLVED — verified (3 witnesses) + enforced by the app | `docs/MODEL_CONTRACT.md`, `verify_model_contract.py` |
 | 15 | One command that says how good the model is | RESOLVED — `evaluate.py`, contamination guard included | README "How good is it?", `evaluate.py` |
+| 16 | Which piece of code produced `model_xgb_new.pkl` | RESOLVED — cell 10, `model`; proven by bit-identical refit | `docs/MODEL_PROVENANCE.md`, `trace_model_provenance.py` |
 | — | Repo layout: archive superseded artifacts, track the production set | RESOLVED — archived + `artifacts/production/` tracked | `archive/legacy-pickles-2026-09/README.md`, `docs/ARTIFACT_AUDIT.md` §5 |

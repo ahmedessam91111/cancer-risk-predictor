@@ -84,6 +84,7 @@ device.
 |------|---------|
 | `app.py` | Streamlit web app (serving entry point) |
 | `evaluate.py` | **One-command evaluation** of the shipped model (Issue #15) — report, confusion matrix, contamination guard |
+| `trace_model_provenance.py` | Issue #16: proves which notebook cell produced the legacy `model_xgb_new.pkl` (exit 0 = identified) |
 | `train.py` | **Training entry point** — `python train.py` |
 | `export_production.py` | Builds the 4-file production artifact set from the verified bundle (calibrated by default) |
 | `calibrated_model.py` | Issue #11 hybrid wrapper: raw-forest labels + calibrated probabilities |
@@ -224,6 +225,7 @@ in [`docs/METRIC_SELECTION.md`](docs/METRIC_SELECTION.md) (Issue #10).
 
 ```bash
 python evaluate.py                  # the headline numbers, re-derived from the artifacts
+python trace_model_provenance.py    # prove which cell wrote the legacy model_xgb_new.pkl
 python verify_dataset.py            # dataset checksum, schema, leakage pre-checks
 python export_production.py --verify-only   # integrity of the production artifact set
 python verify_app_integration.py    # 27 checks that app.py == production artifacts
